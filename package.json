@@ -1,0 +1,55 @@
+{
+  "name": "webfile-hunter",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "面向 Microsoft Edge 的本地网页文件发现、分类、导出与下载扩展",
+  "scripts": {
+    "dev": "vite",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "node scripts/e2e-extension.mjs",
+    "build": "node scripts/build-extension.mjs",
+    "package": "node scripts/package-extension.mjs",
+    "validate:manifest": "node scripts/validate-manifest.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "idb": "8.0.3",
+    "parse5": "8.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/chrome": "0.2.2",
+    "@types/node": "26.1.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.4",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "fake-indexeddb": "6.2.5",
+    "fflate": "0.8.3",
+    "globals": "17.8.0",
+    "jsdom": "29.1.1",
+    "playwright": "1.62.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}

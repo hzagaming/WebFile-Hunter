@@ -1,0 +1,20 @@
+body {
+  max-width: 720px;
+  margin: 3rem auto;
+  font-family: system-ui, sans-serif;
+  background: #f3f8fa;
+  color: #183044;
+}
+a,
+button,
+audio {
+  display: block;
+  margin: 1rem 0;
+}
+body::after {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 32px;
+  background: url("/files/pixel.png");
+}

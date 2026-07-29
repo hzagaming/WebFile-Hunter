@@ -1,0 +1,345 @@
+import { useState } from "react";
+import { sendMessage } from "@/messaging/message-client";
+import type { AppSnapshot } from "@/messaging/message-types";
+import { clampScanConfig } from "@/utils/defaults";
+import { FeedbackNotice } from "../components/FeedbackNotice";
+import { StatusBadge } from "../components/StatusBadge";
+import type { ScanConfig, ScanSession } from "@/types/models";
+
+interface Props {
+  snapshot: AppSnapshot;
+  refresh: (sessionId?: string) => Promise<void>;
+  openResults: () => void;
+}
+
+async function requestSitePermission(url: string): Promise<boolean> {
+  const parsed = new URL(url);
+  return chrome.permissions.request({ origins: [`${parsed.protocol}//${parsed.hostname}/*`] });
+}
+
+function elapsed(session: ScanSession): string {
+  const start = session.startedAt ?? session.createdAt;
+  const end = session.completedAt ?? Date.now();
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+}
+
+function isSupportedPage(tab: AppSnapshot["activeTab"]): boolean {
+  if (!tab) return false;
+  try {
+    return ["http:", "https:"].includes(new URL(tab.url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+export function ScannerPage({ snapshot, refresh, openResults }: Props) {
+  const [showCrawlConfig, setShowCrawlConfig] = useState(false);
+  const [config, setConfig] = useState<ScanConfig>(snapshot.settings.scan);
+  const [working, setWorking] = useState<string>();
+  const [localError, setLocalError] = useState<string>();
+  const tab = snapshot.activeTab;
+  const session = snapshot.activeSession;
+  const canScan = isSupportedPage(tab);
+
+  const run = async (mode: "current" | "monitor" | "crawl"): Promise<void> => {
+    if (!tab || !canScan) return;
+    setWorking(mode);
+    setLocalError(undefined);
+    try {
+      if (mode !== "current" && !(await requestSitePermission(tab.url))) {
+        throw new Error("未授予当前网站权限，任务没有启动。插件不会重复弹出授权窗口。");
+      }
+      const created =
+        mode === "current"
+          ? await sendMessage<ScanSession>({
+              type: "SCAN_CURRENT_PAGE",
+              payload: { tabId: tab.id }
+            })
+          : mode === "monitor"
+            ? await sendMessage<ScanSession>({
+                type: "START_LIVE_MONITOR",
+                payload: { tabId: tab.id, origin: tab.origin }
+              })
+            : await sendMessage<ScanSession>({
+                type: "START_RECURSIVE_CRAWL",
+                payload: { tabId: tab.id, config: clampScanConfig(config) }
+              });
+      setShowCrawlConfig(false);
+      await refresh(created.id);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "任务启动失败。");
+    } finally {
+      setWorking(undefined);
+    }
+  };
+
+  const control = async (action: "pause" | "resume" | "stop"): Promise<void> => {
+    if (!session) return;
+    if (action === "stop" && !confirm("停止当前扫描任务？已发现的结果会保留。")) return;
+    const type =
+      action === "pause" ? "PAUSE_SCAN" : action === "resume" ? "RESUME_SCAN" : "STOP_SCAN";
+    setWorking(action);
+    setLocalError(undefined);
+    try {
+      if (type === "PAUSE_SCAN") await sendMessage({ type, payload: { sessionId: session.id } });
+      else if (type === "RESUME_SCAN")
+        await sendMessage({ type, payload: { sessionId: session.id } });
+      else await sendMessage({ type, payload: { sessionId: session.id } });
+      await refresh(session.id);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "无法控制任务。");
+    } finally {
+      setWorking(undefined);
+    }
+  };
+
+  return (
+    <section className="page scanner-page">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">发现公开资源</p>
+          <h2>开始扫描</h2>
+        </div>
+        {session ? <StatusBadge status={session.status} /> : null}
+      </div>
+      <p className="section-copy">
+        所有结果只保存在本地。扫描不会自动下载、提交表单或进入外域页面。
+      </p>
+      {localError ? (
+        <div className="notice notice-error" role="alert">
+          {localError}
+        </div>
+      ) : null}
+      {!canScan ? (
+        <FeedbackNotice kind="info">当前页面不支持扫描，仅支持 HTTP 或 HTTPS 网页。</FeedbackNotice>
+      ) : null}
+
+      <div className="scan-actions">
+        <button
+          className="primary action-card"
+          type="button"
+          disabled={!canScan || Boolean(working)}
+          onClick={() => void run("current")}
+        >
+          <span className="action-icon">⌕</span>
+          <span>
+            <strong>扫描当前页面</strong>
+            <small>分析 DOM、样式和已加载资源，不进入其他页面</small>
+          </span>
+        </button>
+        <button
+          className="action-card"
+          type="button"
+          disabled={!canScan || Boolean(working)}
+          onClick={() => void run("monitor")}
+        >
+          <span className="action-icon">◉</span>
+          <span>
+            <strong>开始实时监听</strong>
+            <small>
+              仅观察当前标签页后续请求，持续 {snapshot.settings.monitorDurationSeconds} 秒
+            </small>
+          </span>
+        </button>
+        <button
+          className="action-card"
+          type="button"
+          disabled={!canScan || Boolean(working)}
+          onClick={() => setShowCrawlConfig(true)}
+        >
+          <span className="action-icon">⌘</span>
+          <span>
+            <strong>同域递归扫描</strong>
+            <small>授权后按 BFS 扫描同源公开页面</small>
+          </span>
+        </button>
+      </div>
+
+      {showCrawlConfig ? (
+        <div className="config-panel">
+          <div className="section-heading">
+            <h3>递归扫描确认</h3>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="关闭递归扫描设置"
+              onClick={() => setShowCrawlConfig(false)}
+            >
+              ×
+            </button>
+          </div>
+          <p>
+            只访问 <strong>{tab?.origin}</strong>，不会自动扩展到子域名或外部网站。
+          </p>
+          <div className="form-grid">
+            <label>
+              最大深度
+              <input
+                type="number"
+                min="0"
+                max="5"
+                value={config.maxDepth}
+                onChange={(e) => setConfig({ ...config, maxDepth: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              最大页面
+              <input
+                type="number"
+                min="1"
+                max="2000"
+                value={config.maxPages}
+                onChange={(e) => setConfig({ ...config, maxPages: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              并发数
+              <input
+                type="number"
+                min="1"
+                max="6"
+                value={config.maxConcurrency}
+                onChange={(e) => setConfig({ ...config, maxConcurrency: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              请求间隔（毫秒）
+              <input
+                type="number"
+                min="500"
+                step="100"
+                value={config.minDelayMs}
+                onChange={(e) => setConfig({ ...config, minDelayMs: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              超时（秒）
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={config.requestTimeoutMs / 1000}
+                onChange={(e) =>
+                  setConfig({ ...config, requestTimeoutMs: Number(e.target.value) * 1000 })
+                }
+              />
+            </label>
+            <label>
+              重试次数
+              <input
+                type="number"
+                min="0"
+                max="3"
+                value={config.retries}
+                onChange={(e) => setConfig({ ...config, retries: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <div className="check-grid">
+            <label>
+              <input
+                type="checkbox"
+                checked={config.respectRobots}
+                onChange={(e) => setConfig({ ...config, respectRobots: e.target.checked })}
+              />
+              尊重 robots.txt
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={config.probeMetadata}
+                onChange={(e) => setConfig({ ...config, probeMetadata: e.target.checked })}
+              />
+              探测文件元数据
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={config.excludeDangerousActions}
+                onChange={(e) =>
+                  setConfig({ ...config, excludeDangerousActions: e.target.checked })
+                }
+              />
+              排除危险操作 URL
+            </label>
+          </div>
+          <button
+            className="primary full"
+            type="button"
+            disabled={working === "crawl"}
+            onClick={() => void run("crawl")}
+          >
+            确认并请求当前站点权限
+          </button>
+        </div>
+      ) : null}
+
+      {session ? (
+        <div className="progress-card">
+          <div className="section-heading">
+            <h3>最近任务</h3>
+            <StatusBadge status={session.status} />
+          </div>
+          <p className="current-url" title={session.startUrl}>
+            {session.startUrl}
+          </p>
+          <div className="metrics">
+            <div>
+              <strong>{session.pagesProcessed}</strong>
+              <span>已处理页面</span>
+            </div>
+            <div>
+              <strong>{Math.max(0, session.pagesQueued - session.pagesProcessed)}</strong>
+              <span>队列</span>
+            </div>
+            <div>
+              <strong>{session.filesDiscovered}</strong>
+              <span>发现文件</span>
+            </div>
+            <div>
+              <strong>{session.errors}</strong>
+              <span>错误</span>
+            </div>
+          </div>
+          <div className="progress-meta">
+            <span>
+              模式：
+              {session.mode === "current_page"
+                ? "当前页"
+                : session.mode === "live_monitor"
+                  ? "实时监听"
+                  : "递归扫描"}
+            </span>
+            <span>运行：{elapsed(session)}</span>
+          </div>
+          {session.errorMessage ? (
+            <FeedbackNotice kind="error">{session.errorMessage}</FeedbackNotice>
+          ) : null}
+          <div className="button-row">
+            {session.status === "running" && session.mode === "recursive_crawl" ? (
+              <button type="button" onClick={() => void control("pause")}>
+                暂停
+              </button>
+            ) : null}
+            {session.status === "paused" ? (
+              <button type="button" onClick={() => void control("resume")}>
+                继续
+              </button>
+            ) : null}
+            {session.status === "running" || session.status === "paused" ? (
+              <button className="danger" type="button" onClick={() => void control("stop")}>
+                停止任务
+              </button>
+            ) : null}
+            {session.filesDiscovered > 0 ? (
+              <button className="primary" type="button" onClick={openResults}>
+                查看结果
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
