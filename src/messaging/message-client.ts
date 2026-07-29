@@ -14,6 +14,7 @@ export function subscribeEvents(listener: (event: ExtensionEvent) => void): () =
       message !== null &&
       "type" in message &&
       [
+        "ACTIVE_CONTEXT_CHANGED",
         "SCAN_PROGRESS",
         "FILES_DISCOVERED",
         "DOWNLOADS_UPDATED",

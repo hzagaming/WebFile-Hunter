@@ -68,4 +68,26 @@ describe("metadata probe", () => {
       )
     ).rejects.toThrow("不属于当前授权站点");
   });
+
+  it("网络重试退避期间可立即取消", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new TypeError("offline")));
+    const controller = new AbortController();
+    const probe = probeUrlMetadata("https://example.com/manual.pdf", {
+      origin: "https://example.com",
+      config: DEFAULT_SCAN_CONFIG,
+      signal: controller.signal
+    });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    const result = await Promise.race([
+      probe.then(
+        () => "resolved",
+        () => "aborted"
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve("timeout"), 100))
+    ]);
+
+    expect(result).toBe("aborted");
+  });
 });

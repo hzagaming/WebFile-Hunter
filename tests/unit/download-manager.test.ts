@@ -1,12 +1,13 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DownloadManager } from "@/background/download-manager";
-import { clearDatabase, listDownloads, putFiles } from "@/database/db";
-import type { FileCandidate } from "@/types/models";
+import { clearDatabase, listDownloads, putDownload, putFiles } from "@/database/db";
+import type { DownloadTask, FileCandidate } from "@/types/models";
 
 let nextBrowserId = 100;
 const download = vi.fn(() => Promise.resolve(nextBrowserId++));
 const cancel = vi.fn(() => Promise.resolve());
+const search = vi.fn(() => Promise.resolve([] as chrome.downloads.DownloadItem[]));
 
 function file(id: string, overrides: Partial<FileCandidate> = {}): FileCandidate {
   return {
@@ -35,11 +36,13 @@ beforeEach(async () => {
   nextBrowserId = 100;
   download.mockReset().mockImplementation(() => Promise.resolve(nextBrowserId++));
   cancel.mockClear();
+  search.mockReset().mockResolvedValue([]);
   globalThis.chrome = {
     downloads: {
       onChanged: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
       download,
       cancel,
+      search,
       open: vi.fn(() => Promise.resolve()),
       show: vi.fn()
     },
@@ -117,5 +120,118 @@ describe("DownloadManager", () => {
 
     expect(cancel).toHaveBeenCalledWith(100);
     expect((await listDownloads())[0]?.status).toBe("cancelled");
+  });
+
+  it("同一文件只保留一个活动任务，终态后允许重新加入", async () => {
+    await putFiles("session", [file("duplicate")]);
+    const manager = new DownloadManager();
+
+    const initial = await manager.queue(["duplicate", "duplicate"]);
+    expect(initial).toHaveLength(1);
+    expect(await manager.queue(["duplicate"])).toEqual([]);
+
+    await manager.action("start");
+    expect((await listDownloads())[0]?.status).toBe("in_progress");
+    expect(await manager.queue(["duplicate"])).toEqual([]);
+
+    await manager.action("cancel", initial[0]?.id);
+    const requeued = await manager.queue(["duplicate"]);
+    expect(requeued).toHaveLength(1);
+    expect(requeued[0]?.id).not.toBe(initial[0]?.id);
+  });
+
+  it("并发加入同一文件时也只创建一个活动任务", async () => {
+    await putFiles("session", [file("concurrent")]);
+    const manager = new DownloadManager();
+
+    const batches = await Promise.all([
+      manager.queue(["concurrent"]),
+      manager.queue(["concurrent"])
+    ]);
+
+    expect(batches.flat()).toHaveLength(1);
+    expect(await listDownloads()).toHaveLength(1);
+  });
+
+  it("拒绝重试非终态任务，避免重复启动浏览器下载", async () => {
+    await putFiles("session", [file("active-retry")]);
+    const manager = new DownloadManager();
+    const [task] = await manager.queue(["active-retry"]);
+    await manager.action("start");
+
+    await manager.action("retry", task?.id);
+
+    expect(download).toHaveBeenCalledTimes(1);
+    expect((await listDownloads())[0]?.status).toBe("in_progress");
+  });
+
+  it("同候选已有活动任务时不重新激活旧终态任务", async () => {
+    download.mockRejectedValueOnce(new Error("NETWORK_FAILED"));
+    await putFiles("session", [file("terminal-retry")]);
+    const manager = new DownloadManager();
+    const [failedTask] = await manager.queue(["terminal-retry"]);
+    await manager.action("start");
+    const [replacement] = await manager.queue(["terminal-retry"]);
+
+    await manager.action("retry", failedTask?.id);
+
+    const downloads = await listDownloads();
+    expect(downloads.find((task) => task.id === failedTask?.id)?.status).toBe("failed");
+    expect(downloads.find((task) => task.id === replacement?.id)?.status).toBe("in_progress");
+    expect(
+      downloads.filter((task) => ["queued", "starting", "in_progress"].includes(task.status))
+    ).toHaveLength(1);
+  });
+
+  it("通过 downloads.search 同步真实下载进度", async () => {
+    await putFiles("session", [file("progress")]);
+    const manager = new DownloadManager();
+    await manager.queue(["progress"]);
+    await manager.action("start");
+    search.mockResolvedValue([
+      {
+        id: 100,
+        state: "in_progress",
+        paused: false,
+        bytesReceived: 25,
+        totalBytes: 100
+      } as chrome.downloads.DownloadItem
+    ]);
+
+    const [task] = await manager.getSnapshot();
+
+    expect(task).toMatchObject({ status: "in_progress", bytesReceived: 25, totalBytes: 100 });
+  });
+
+  it("后台恢复时把失去浏览器 ID 的启动任务标记为失败", async () => {
+    const stale: DownloadTask = {
+      id: "download-stale",
+      candidateId: "file-stale",
+      url: "https://example.com/stale.pdf",
+      filename: "stale.pdf",
+      status: "starting",
+      createdAt: 1,
+      updatedAt: 1
+    };
+    await putDownload(stale);
+    const manager = new DownloadManager();
+
+    await manager.reconcile();
+
+    const [reconciled] = await listDownloads();
+    expect(reconciled?.status).toBe("failed");
+    expect(reconciled?.error).toContain("后台");
+  });
+
+  it("清除全部数据前取消活动浏览器下载并删除任务", async () => {
+    await putFiles("session", [file("clear")]);
+    const manager = new DownloadManager();
+    await manager.queue(["clear"]);
+    await manager.action("start");
+
+    await manager.clearAll();
+
+    expect(cancel).toHaveBeenCalledWith(100);
+    expect(await listDownloads()).toEqual([]);
   });
 });

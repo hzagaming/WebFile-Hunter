@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WebFile Hunter - 网页文件猎手",
   "short_name": "WebFile Hunter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "在用户主动操作后发现、分类、导出并下载网页公开文件资源。",
   "minimum_chrome_version": "116",
   "permissions": [

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPage } from "@/sidepanel/pages/DownloadsPage";
@@ -51,5 +51,22 @@ describe("DownloadsPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("取消失败");
     await user.click(screen.getByRole("button", { name: "暂停队列" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("活动下载存在时同步浏览器真实进度", async () => {
+    const updated = task({ bytesReceived: 75 });
+    const updateDownloads = vi.fn();
+    mocks.sendMessage.mockResolvedValue([updated]);
+
+    render(
+      <DownloadsPage
+        snapshot={appSnapshot({ downloads: [task()] })}
+        refresh={vi.fn()}
+        updateDownloads={updateDownloads}
+      />
+    );
+
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith({ type: "GET_DOWNLOADS" }));
+    expect(updateDownloads).toHaveBeenCalledWith([updated]);
   });
 });

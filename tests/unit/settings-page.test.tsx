@@ -83,4 +83,19 @@ describe("SettingsPage", () => {
       )
     );
   });
+
+  it("上下文快照刷新时保留尚未保存的设置草稿", () => {
+    const initial = appSnapshot();
+    const { rerender } = render(<SettingsPage snapshot={initial} refresh={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("最大深度"), { target: { value: "4" } });
+
+    rerender(
+      <SettingsPage
+        snapshot={appSnapshot({ settings: structuredClone(initial.settings) })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText("最大深度")).toHaveValue(4);
+  });
 });

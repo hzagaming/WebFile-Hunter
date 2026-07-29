@@ -7,7 +7,7 @@ import { exportTxt } from "@/export/export-txt";
 import { saveExport } from "@/export/save-export";
 import { VirtualList } from "../components/VirtualList";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
-import type { DownloadTask, FileCandidate, FileCategory } from "@/types/models";
+import type { DiscoverySource, DownloadTask, FileCandidate, FileCategory } from "@/types/models";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -26,6 +26,24 @@ const categoryLabels: Record<FileCategory | "all", string> = {
   subtitle: "字幕",
   data: "数据",
   unknown: "未知"
+};
+
+const sourceLabels: Record<DiscoverySource, string> = {
+  DOM_ATTRIBUTE: "页面元素",
+  DOWNLOAD_ATTRIBUTE: "下载属性",
+  CSS_URL: "样式资源",
+  PERFORMANCE_ENTRY: "性能记录",
+  NETWORK_REQUEST: "网络请求",
+  NETWORK_HEADER: "响应头",
+  CRAWLED_PAGE: "递归页面",
+  MANUAL_URL: "元数据探测"
+};
+
+const warningLabels: Record<string, string> = {
+  temporary_url: "临时签名链接，可能过期",
+  temporary_blob: "临时浏览器资源，不能直接下载",
+  segmented_stream: "分段流媒体，不能作为普通文件下载",
+  mime_extension_conflict: "MIME 与扩展名不一致"
 };
 
 function formatSize(bytes?: number): string {
@@ -235,6 +253,20 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     }
   };
 
+  const runCardAction = async (
+    action: () => Promise<unknown>,
+    success: string,
+    fallback: string
+  ): Promise<void> => {
+    setFeedback(undefined);
+    try {
+      await action();
+      setFeedback({ kind: "success", text: success });
+    } catch (error) {
+      fail(error, fallback);
+    }
+  };
+
   return (
     <section className="page results-page">
       <div className="section-heading">
@@ -254,6 +286,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           <button
             type="button"
             className={category === item ? "active" : ""}
+            aria-pressed={category === item}
             key={item}
             onClick={() => setCategory(item)}
           >
@@ -294,11 +327,11 @@ export function ResultsPage({ snapshot, refresh }: Props) {
               来源
               <select value={source} onChange={(e) => setSource(e.target.value)}>
                 <option value="all">全部来源</option>
-                <option value="DOM_ATTRIBUTE">页面元素</option>
-                <option value="PERFORMANCE_ENTRY">性能记录</option>
-                <option value="NETWORK_REQUEST">网络请求</option>
-                <option value="NETWORK_HEADER">响应头</option>
-                <option value="CRAWLED_PAGE">递归页面</option>
+                {Object.entries(sourceLabels).map(([value, label]) => (
+                  <option value={value} key={value}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -375,8 +408,9 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       {filtered.length ? (
         <VirtualList
           items={filtered}
-          itemHeight={216}
+          itemHeight={176}
           height={Math.max(320, innerHeight - 390)}
+          endPadding={72}
           getKey={(file) => file.id}
           renderItem={(file) => (
             <article className={`result-card ${selected.has(file.id) ? "selected" : ""}`}>
@@ -402,7 +436,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   <span>置信度 {file.confidence}</span>
                 </div>
                 <div className="badges">
-                  <span>{file.sources.join(" + ")}</span>
+                  <span>{file.sources.map((item) => sourceLabels[item]).join(" + ")}</span>
                   {file.isExternal ? (
                     <span className="warning">外部资源</span>
                   ) : (
@@ -410,27 +444,43 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   )}
                   {file.warnings.map((warning) => (
                     <span className="warning" key={warning}>
-                      {warning}
+                      {warningLabels[warning] ?? "检测到资源风险"}
                     </span>
                   ))}
                 </div>
                 <div className="card-actions">
                   <button
                     type="button"
-                    onClick={() => void navigator.clipboard.writeText(file.canonicalUrl)}
+                    onClick={() =>
+                      void runCardAction(
+                        () => navigator.clipboard.writeText(file.finalUrl ?? file.canonicalUrl),
+                        "已复制文件链接。",
+                        "无法写入剪贴板。"
+                      )
+                    }
                   >
                     复制
                   </button>
                   <button
                     type="button"
-                    onClick={() => void chrome.tabs.create({ url: file.sourcePageUrl })}
+                    onClick={() =>
+                      void runCardAction(
+                        () => chrome.tabs.create({ url: file.sourcePageUrl }),
+                        "已打开来源页。",
+                        "无法打开来源页。"
+                      )
+                    }
                   >
                     来源页
                   </button>
                   <button
                     type="button"
                     onClick={() =>
-                      void chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl })
+                      void runCardAction(
+                        () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
+                        "已打开文件链接。",
+                        "无法打开文件链接。"
+                      )
                     }
                   >
                     打开

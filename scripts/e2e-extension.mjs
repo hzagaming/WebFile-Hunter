@@ -38,6 +38,36 @@ async function assertNoHorizontalOverflow(page, label) {
   }
 }
 
+async function assertResponsive(page, label) {
+  for (const width of [320, 380]) {
+    await page.setViewportSize({ width, height: 820 });
+    await assertNoHorizontalOverflow(page, `${label}（${width}px）`);
+  }
+}
+
+async function assertActiveNavigation(page, label) {
+  const active = await page.locator(".tabs button.active").allTextContents();
+  if (active.length !== 1 || !active[0]?.includes(label)) {
+    throw new Error(`${label}导航状态异常：${JSON.stringify(active)}`);
+  }
+  await page.waitForTimeout(200);
+}
+
+async function assertLastResultUnobscured(page) {
+  const list = page.getByRole("region", { name: "扫描结果列表" });
+  await list.focus();
+  await list.press("End");
+  const positions = await page.evaluate(() => {
+    const items = document.querySelectorAll('[role="listitem"]');
+    const last = items.item(items.length - 1).getBoundingClientRect();
+    const actions = document.querySelector(".sticky-actions")?.getBoundingClientRect();
+    return { lastBottom: last.bottom, actionsTop: actions?.top };
+  });
+  if (positions.actionsTop === undefined || positions.lastBottom > positions.actionsTop) {
+    throw new Error(`末项被批量操作栏遮挡：${JSON.stringify(positions)}`);
+  }
+}
+
 async function eventually(read, accept, timeoutMs = 12_000) {
   const deadline = Date.now() + timeoutMs;
   let last;
@@ -133,6 +163,11 @@ try {
   );
   const currentFiles = currentRows.files.filter((file) => file.sessionId === currentSession.id);
   if (currentFiles.length < 2) throw new Error("当前页面扫描结果不足。");
+  await eventually(
+    () => databaseRows(worker),
+    (rows) =>
+      rows.sessions.find((session) => session.id === currentSession.id)?.status === "completed"
+  );
 
   const liveSession = await send(permissionPage, {
     type: "START_LIVE_MONITOR",
@@ -182,24 +217,63 @@ try {
   });
   await sidepanelPage.getByRole("heading", { name: "WebFile Hunter" }).waitFor();
   await sidepanelPage.getByRole("heading", { name: "开始扫描" }).waitFor();
-  await assertNoHorizontalOverflow(sidepanelPage, "扫描页");
-
+  await assertResponsive(sidepanelPage, "扫描页");
+  await assertActiveNavigation(sidepanelPage, "扫描");
   await mkdir(resolve("test-results"), { recursive: true });
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-scan-380.png"),
+    fullPage: true
+  });
+
+  const currentSite = sidepanelPage.locator(".app-header p");
+  await fixturePage.bringToFront();
+  await eventually(
+    () => currentSite.getAttribute("title"),
+    (title) => title === fixturePage.url()
+  );
+  await fixturePage.goto(server.origin, { waitUntil: "domcontentloaded" });
+  await eventually(
+    () => currentSite.getAttribute("title"),
+    (title) => title === fixturePage.url()
+  );
+  const alternatePage = await context.newPage();
+  watchPage(alternatePage, "alternate");
+  await alternatePage.goto(`${server.origin}/page-2.html?tab=alternate`, {
+    waitUntil: "domcontentloaded"
+  });
+  await eventually(
+    () => currentSite.getAttribute("title"),
+    (title) => title === alternatePage.url()
+  );
+  await fixturePage.bringToFront();
+  await eventually(
+    () => currentSite.getAttribute("title"),
+    (title) => title === fixturePage.url()
+  );
+
   await sidepanelPage.getByRole("button", { name: "结果", exact: true }).click();
   await sidepanelPage.getByRole("heading", { name: /发现结果/ }).waitFor();
-  await assertNoHorizontalOverflow(sidepanelPage, "结果页");
+  await assertResponsive(sidepanelPage, "结果页");
+  await assertActiveNavigation(sidepanelPage, "结果");
   await sidepanelPage.screenshot({
     path: resolve("test-results/edge-results-380.png"),
     fullPage: true
   });
+  await assertLastResultUnobscured(sidepanelPage);
 
   await sidepanelPage.getByRole("button", { name: "下载", exact: true }).click();
   await sidepanelPage.getByRole("heading", { name: "下载队列" }).waitFor();
-  await assertNoHorizontalOverflow(sidepanelPage, "下载页");
+  await assertResponsive(sidepanelPage, "下载页");
+  await assertActiveNavigation(sidepanelPage, "下载");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-downloads-380.png"),
+    fullPage: true
+  });
 
   await sidepanelPage.getByRole("button", { name: "历史", exact: true }).click();
   await sidepanelPage.getByRole("heading", { name: "扫描历史" }).waitFor();
-  await assertNoHorizontalOverflow(sidepanelPage, "历史页");
+  await assertResponsive(sidepanelPage, "历史页");
+  await assertActiveNavigation(sidepanelPage, "历史");
   await sidepanelPage.getByRole("button", { name: "清空历史" }).waitFor();
   if (!(await sidepanelPage.getByRole("button", { name: "导出" }).count())) {
     throw new Error("历史任务缺少单次导出操作。");
@@ -211,7 +285,12 @@ try {
 
   await sidepanelPage.getByRole("button", { name: "设置", exact: true }).click();
   await sidepanelPage.getByRole("heading", { name: "设置", exact: true }).waitFor();
-  await assertNoHorizontalOverflow(sidepanelPage, "设置页");
+  await assertResponsive(sidepanelPage, "设置页");
+  await assertActiveNavigation(sidepanelPage, "设置");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-settings-380.png"),
+    fullPage: true
+  });
 
   if (browserErrors.length) throw new Error(`浏览器页面错误：\n${browserErrors.join("\n")}`);
 
@@ -219,8 +298,9 @@ try {
   console.log(`当前页扫描通过：${currentFiles.length} 个候选`);
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
   console.log("同源导航监听重注入通过");
+  console.log("活动标签页切换与导航上下文同步通过");
   console.log("五页窄侧栏布局、历史导出与清空操作通过");
-  console.log("截图：test-results/edge-results-380.png, test-results/edge-history-380.png");
+  console.log("五页截图已写入 test-results/edge-*-380.png");
 } finally {
   await context?.close();
   await server.close();

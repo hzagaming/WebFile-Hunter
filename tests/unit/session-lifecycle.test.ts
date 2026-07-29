@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   clearHistoryData: vi.fn(),
   deleteSessionData: vi.fn(),
   finishSession: vi.fn(),
+  getCheckpoint: vi.fn(),
   getSession: vi.fn(),
   hasOriginPermission: vi.fn(),
   injectPageScanner: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/database/db", () => ({
   clearHistoryData: mocks.clearHistoryData,
   deleteSessionData: mocks.deleteSessionData,
   getSession: mocks.getSession,
+  getCheckpoint: mocks.getCheckpoint,
   listSessions: mocks.listSessions
 }));
 vi.mock("@/background/crawler-engine", () => ({ cancelCrawler: mocks.cancelCrawler }));
@@ -35,7 +37,9 @@ vi.mock("@/background/session-manager", () => ({
 
 import {
   deleteScanSession,
+  failScanSessionStart,
   handleLiveTabUpdated,
+  reconcileInterruptedSessions,
   stopLiveMonitor,
   stopSessionsForRemovedOrigins
 } from "@/background/session-lifecycle";
@@ -76,6 +80,7 @@ beforeEach(() => {
     }
   });
   mocks.getSession.mockResolvedValue(liveSession());
+  mocks.getCheckpoint.mockResolvedValue(undefined);
   mocks.liveSessionIdForTab.mockResolvedValue("session-live");
   mocks.hasOriginPermission.mockResolvedValue(true);
   mocks.listSessions.mockResolvedValue([]);
@@ -129,5 +134,30 @@ describe("scan session lifecycle", () => {
   it("停止监听会清理 alarm", async () => {
     await stopLiveMonitor(liveSession(), "completed");
     expect(chrome.alarms.clear).toHaveBeenCalledWith("monitor:session-live");
+  });
+
+  it("后台重启后把有检查点的递归任务恢复为可继续的暂停状态", async () => {
+    const recursive = liveSession({ id: "session-recursive", mode: "recursive_crawl" });
+    mocks.listSessions.mockResolvedValue([recursive]);
+    mocks.getCheckpoint.mockResolvedValue({ sessionId: recursive.id });
+
+    await reconcileInterruptedSessions();
+
+    expect(mocks.patchSession).toHaveBeenCalledWith(recursive.id, { status: "paused" });
+  });
+
+  it("监听启动失败时清理内容监听和 alarm，并记录失败原因", async () => {
+    const session = liveSession();
+
+    await failScanSessionStart(session, new Error("脚本注入失败"));
+
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(session.tabId, {
+      type: "STOP_CONTENT_MONITOR"
+    });
+    expect(chrome.alarms.clear).toHaveBeenCalledWith(`monitor:${session.id}`);
+    expect(mocks.finishSession).toHaveBeenCalledWith(session.id, "failed");
+    expect(mocks.patchSession).toHaveBeenCalledWith(session.id, {
+      errorMessage: "脚本注入失败"
+    });
   });
 });

@@ -35,6 +35,22 @@ function combineSignals(
   return { signal: combined, cleanup: () => clearTimeout(timeout) };
 }
 
+function abortableDelay(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException("任务已取消", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const complete = (): void => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timer = setTimeout(complete, delayMs);
+    const abort = (): void => {
+      clearTimeout(timer);
+      reject(new DOMException("任务已取消", "AbortError"));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
 export async function safeFetch(
   rawUrl: string,
   init: RequestInit,
@@ -122,17 +138,7 @@ export async function probeUrlMetadata(
         maxRetries: options.config.retries
       });
       if (!decision.retry) throw new NonRetryableProbeError(`服务器返回 HTTP ${response.status}。`);
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, decision.delayMs);
-        options.signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            reject(new DOMException("任务已取消", "AbortError"));
-          },
-          { once: true }
-        );
-      });
+      await abortableDelay(decision.delayMs, options.signal);
     } catch (error) {
       if (options.signal.aborted) throw error;
       if (error instanceof NonRetryableProbeError) throw error;
@@ -144,7 +150,7 @@ export async function probeUrlMetadata(
         maxRetries: options.config.retries
       });
       if (!decision.retry) break;
-      await new Promise((resolve) => setTimeout(resolve, decision.delayMs));
+      await abortableDelay(decision.delayMs, options.signal);
     }
   }
   throw lastError instanceof Error ? lastError : new TypeError("元数据探测失败。");

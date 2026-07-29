@@ -3,7 +3,7 @@ import { looksLikeFileUrl } from "@/core/file-classifier";
 import { putFiles, getSession, listFiles } from "@/database/db";
 import { getSettings } from "@/database/settings";
 import { broadcast } from "./broadcast";
-import { patchSession } from "./session-manager";
+import { finishSession, patchSession } from "./session-manager";
 import type { PageScanResult, RawResource } from "@/types/scanner";
 
 const RESOURCE_TAGS = new Set([
@@ -61,7 +61,9 @@ export async function handlePageScanResult(
   liveBatch: boolean
 ): Promise<number> {
   const session = await getSession(sessionId);
-  if (!session || session.status !== "running") throw new TypeError("扫描任务无效或已经停止。");
+  const acceptsLateFrame = session?.mode === "current_page" && session.status === "completed";
+  if (!session || (session.status !== "running" && !acceptsLateFrame))
+    throw new TypeError("扫描任务无效或已经停止。");
   if (sender.tab?.id !== session.tabId) throw new TypeError("页面扫描结果来自错误的标签页。");
   let pageUrl: URL;
   try {
@@ -103,6 +105,10 @@ export async function handlePageScanResult(
       pagesProcessed: liveBatch ? current.pagesProcessed : current.pagesProcessed + 1,
       filesDiscovered: (await listFiles(sessionId)).length
     });
+    if (current.mode === "current_page" && current.status === "running") {
+      await chrome.alarms.clear(`scan:${sessionId}`);
+      await finishSession(sessionId, "completed");
+    }
   }
   return stored.length;
 }

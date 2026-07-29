@@ -73,7 +73,11 @@ export function App() {
         ) : tab === "results" ? (
           <ResultsPage snapshot={state.snapshot} refresh={state.refresh} />
         ) : tab === "downloads" ? (
-          <DownloadsPage snapshot={state.snapshot} refresh={state.refresh} />
+          <DownloadsPage
+            snapshot={state.snapshot}
+            refresh={state.refresh}
+            updateDownloads={state.updateDownloads}
+          />
         ) : tab === "history" ? (
           <HistoryPage
             snapshot={state.snapshot}
@@ -81,7 +85,11 @@ export function App() {
             openResults={() => setTab("results")}
           />
         ) : (
-          <SettingsPage snapshot={state.snapshot} refresh={state.refresh} />
+          <SettingsPage
+            snapshot={state.snapshot}
+            refresh={state.refresh}
+            updateSettings={state.updateSettings}
+          />
         )}
       </main>
     </div>

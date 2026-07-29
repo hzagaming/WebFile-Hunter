@@ -1,4 +1,10 @@
-import { clearHistoryData, deleteSessionData, getSession, listSessions } from "@/database/db";
+import {
+  clearHistoryData,
+  deleteSessionData,
+  getCheckpoint,
+  getSession,
+  listSessions
+} from "@/database/db";
 import type { ScanSession, ScanStatus } from "@/types/models";
 import { cancelCrawler } from "./crawler-engine";
 import { injectPageScanner } from "./page-scanner";
@@ -25,7 +31,25 @@ export async function stopScanSession(session: ScanSession): Promise<void> {
   if (!["running", "paused"].includes(session.status)) return;
   if (session.mode === "recursive_crawl") await cancelCrawler(session.id);
   else if (session.mode === "live_monitor") await stopLiveMonitor(session);
-  else await finishSession(session.id, "cancelled");
+  else {
+    await chrome.alarms.clear(`scan:${session.id}`);
+    await finishSession(session.id, "cancelled");
+  }
+}
+
+export async function failScanSessionStart(session: ScanSession, error: unknown): Promise<void> {
+  if (session.mode === "live_monitor") {
+    await chrome.tabs
+      .sendMessage(session.tabId, { type: "STOP_CONTENT_MONITOR" })
+      .catch(() => undefined);
+    await chrome.alarms.clear(`monitor:${session.id}`);
+  } else if (session.mode === "current_page") {
+    await chrome.alarms.clear(`scan:${session.id}`);
+  }
+  await finishSession(session.id, "failed");
+  await patchSession(session.id, {
+    errorMessage: error instanceof Error ? error.message : "扫描任务启动失败。"
+  });
 }
 
 export async function handleLiveTabUpdated(
@@ -89,6 +113,23 @@ export async function stopSessionsForRemovedOrigins(origins: readonly string[]):
 export async function stopSessionsForTab(tabId: number): Promise<void> {
   for (const session of await listSessions()) {
     if (session.tabId === tabId) await stopScanSession(session);
+  }
+}
+
+export async function reconcileInterruptedSessions(): Promise<void> {
+  for (const session of await listSessions()) {
+    if (session.mode !== "recursive_crawl" || session.status !== "running") continue;
+    const checkpoint = await getCheckpoint(session.id);
+    await patchSession(
+      session.id,
+      checkpoint
+        ? { status: "paused" }
+        : {
+            status: "failed",
+            completedAt: Date.now(),
+            errorMessage: "后台已重启，且任务没有可恢复的检查点。"
+          }
+    );
   }
 }
 

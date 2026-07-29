@@ -41,6 +41,14 @@ function isPrivateIpv4(host: string): boolean {
   );
 }
 
+function ipv4FromMappedIpv6(host: string): string | undefined {
+  const match = /^::ffff:(?:0:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (!match) return undefined;
+  const high = Number.parseInt(match[1]!, 16);
+  const low = Number.parseInt(match[2]!, 16);
+  return `${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`;
+}
+
 function isPrivateHost(hostname: string): boolean {
   const host = hostname
     .toLowerCase()
@@ -50,6 +58,8 @@ function isPrivateHost(hostname: string): boolean {
     return true;
   }
   if (isPrivateIpv4(host)) return true;
+  const mappedIpv4 = ipv4FromMappedIpv6(host);
+  if (mappedIpv4 && isPrivateIpv4(mappedIpv4)) return true;
   const compact = host.replace(/^0+(?=[0-9a-f])/i, "");
   return (
     compact === "::1" || /^f[cd][0-9a-f]{2}:/i.test(compact) || /^fe[89ab][0-9a-f]:/i.test(compact)

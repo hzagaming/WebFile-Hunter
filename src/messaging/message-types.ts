@@ -11,6 +11,7 @@ import type { PageScanResult } from "@/types/scanner";
 export type ExtensionRequest =
   | { type: "GET_ACTIVE_CONTEXT" }
   | { type: "GET_SNAPSHOT"; payload?: { sessionId?: string } }
+  | { type: "GET_DOWNLOADS" }
   | { type: "SCAN_CURRENT_PAGE"; payload: { tabId: number } }
   | { type: "START_LIVE_MONITOR"; payload: { tabId: number; origin: string } }
   | { type: "START_RECURSIVE_CRAWL"; payload: { tabId: number; config: ScanConfig } }
@@ -39,6 +40,7 @@ export type ExtensionRequest =
   | { type: "REVOKE_ORIGIN"; payload: { originPattern: string } };
 
 export type ExtensionEvent =
+  | { type: "ACTIVE_CONTEXT_CHANGED" }
   | { type: "SCAN_PROGRESS"; payload: ScanProgress }
   | { type: "FILES_DISCOVERED"; payload: { sessionId: string; files: FileCandidate[] } }
   | { type: "DOWNLOADS_UPDATED"; payload: DownloadTask[] }

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   broadcast: vi.fn(),
   getSession: vi.fn(),
   getSettings: vi.fn(),
+  finishSession: vi.fn(),
   listFiles: vi.fn(),
   patchSession: vi.fn(),
   putFiles: vi.fn()
@@ -17,11 +18,17 @@ vi.mock("@/database/db", () => ({
 }));
 vi.mock("@/database/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
-vi.mock("@/background/session-manager", () => ({ patchSession: mocks.patchSession }));
+vi.mock("@/background/session-manager", () => ({
+  finishSession: mocks.finishSession,
+  patchSession: mocks.patchSession
+}));
 
 import { handlePageScanResult } from "@/background/page-scanner";
 
 beforeEach(() => {
+  globalThis.chrome = {
+    alarms: { clear: vi.fn().mockResolvedValue(true) }
+  } as unknown as typeof chrome;
   mocks.getSession.mockResolvedValue(scanSession({ status: "running" }));
   mocks.getSettings.mockResolvedValue({ customExtensions: {}, customMimeTypes: {} });
   mocks.putFiles.mockResolvedValue([]);
@@ -39,5 +46,32 @@ describe("handlePageScanResult security", () => {
       )
     ).rejects.toThrow("origin");
     expect(mocks.putFiles).not.toHaveBeenCalled();
+  });
+
+  it("收到当前页结果后立即完成任务，不依赖后台定时器", async () => {
+    await handlePageScanResult(
+      "session-fixture",
+      { pageUrl: "https://example.test/page", title: "page", resources: [], pages: [] },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
+    expect(mocks.finishSession).toHaveBeenCalledWith("session-fixture", "completed");
+    expect(chrome.alarms.clear).toHaveBeenCalledWith("scan:session-fixture");
+  });
+
+  it("当前页任务完成后仍接受其他 frame 的迟到结果", async () => {
+    mocks.getSession.mockResolvedValue(scanSession({ status: "completed" }));
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        { pageUrl: "https://example.test/frame", title: "frame", resources: [], pages: [] },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).resolves.toBe(0);
+    expect(mocks.putFiles).toHaveBeenCalled();
+    expect(mocks.finishSession).not.toHaveBeenCalled();
   });
 });

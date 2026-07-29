@@ -4,22 +4,31 @@ interface Props<T> {
   items: readonly T[];
   itemHeight: number;
   height: number;
+  endPadding?: number;
   getKey: (item: T) => string;
   renderItem: (item: T) => ReactNode;
 }
 
-export function VirtualList<T>({ items, itemHeight, height, getKey, renderItem }: Props<T>) {
+export function VirtualList<T>({
+  items,
+  itemHeight,
+  height,
+  endPadding = 0,
+  getKey,
+  renderItem
+}: Props<T>) {
   const [scrollTop, setScrollTop] = useState(0);
   const overscan = 4;
-  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
   const visibleCount = Math.ceil(height / itemHeight) + overscan * 2;
+  const naturalStart = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
+  const start = Math.min(Math.max(0, items.length - visibleCount), naturalStart);
   const end = Math.min(items.length, start + visibleCount);
   const visible = useMemo(() => items.slice(start, end), [end, items, start]);
 
   const onScroll = (event: UIEvent<HTMLDivElement>): void =>
     setScrollTop(event.currentTarget.scrollTop);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    const maxScroll = Math.max(0, items.length * itemHeight - height);
+    const maxScroll = Math.max(0, items.length * itemHeight + endPadding - height);
     const next =
       event.key === "Home"
         ? 0
@@ -49,7 +58,10 @@ export function VirtualList<T>({ items, itemHeight, height, getKey, renderItem }
       onScroll={onScroll}
       onKeyDown={onKeyDown}
     >
-      <div role="list" style={{ height: items.length * itemHeight, position: "relative" }}>
+      <div
+        role="list"
+        style={{ height: items.length * itemHeight + endPadding, position: "relative" }}
+      >
         <div style={{ position: "absolute", insetInline: 0, top: start * itemHeight }}>
           {visible.map((item, index) => (
             <div

@@ -12,6 +12,8 @@ describe("inspectUrlSafety", () => {
     "http://172.20.1.2/a",
     "http://192.168.1.2/a",
     "http://[::1]/a",
+    "http://[::ffff:127.0.0.1]/a",
+    "http://[::ffff:10.1.2.3]/a",
     "http://[fc00::1]/a",
     "http://[fe80::1]/a"
   ])("拒绝本地或私网地址 %s", (url) => {

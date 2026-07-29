@@ -22,6 +22,10 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "data-href",
       "data-download",
       "data-file",
+      "data-audio",
+      "data-video",
+      "data-original",
+      "lazy-src",
       "style"
     ]
   });

@@ -67,7 +67,9 @@ export class NetworkMonitor {
       ...(details.initiator ? { sourcePageUrl: details.initiator } : {})
     };
     this.#requests.set(details.requestId, request);
-    if (looksLikeFileUrl(details.url)) void this.#persist(request, "NETWORK_REQUEST");
+    if (looksLikeFileUrl(details.url)) {
+      void this.#persist(request, "NETWORK_REQUEST").catch(() => undefined);
+    }
     return undefined;
   };
 
@@ -102,7 +104,7 @@ export class NetworkMonitor {
       Boolean(request.contentDisposition) ||
       (Boolean(categoryFromMime(request.mimeType)) && !isHtmlMime(request.mimeType)) ||
       request.mimeType === "application/octet-stream";
-    if (isCandidate) void this.#persist(request, "NETWORK_HEADER");
+    if (isCandidate) void this.#persist(request, "NETWORK_HEADER").catch(() => undefined);
     return undefined;
   };
 
@@ -127,13 +129,19 @@ export class NetworkMonitor {
     if (!sessionId) return;
     const session = await getSession(sessionId);
     if (!session || session.status !== "running" || session.tabId !== request.tabId) return;
+    const sourcePageUrl = request.sourcePageUrl ?? session.startUrl;
+    try {
+      if (new URL(sourcePageUrl).origin !== session.origin) return;
+    } catch {
+      return;
+    }
     const settings = await getSettings();
     let candidate;
     try {
       candidate = createFileCandidate({
         url: request.url,
         source,
-        sourcePageUrl: request.sourcePageUrl ?? session.startUrl,
+        sourcePageUrl,
         tabId: request.tabId,
         requestId: request.requestId,
         requestType: request.type,

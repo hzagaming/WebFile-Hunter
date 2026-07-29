@@ -5,13 +5,13 @@ import {
   deleteSessionFiles,
   getFile,
   getSession,
-  listDownloads,
   listFiles,
   listSessions,
   putFiles
 } from "@/database/db";
 import { getSettings, saveSettings } from "@/database/settings";
 import type { AppSnapshot, ExtensionRequest, MessageResponse } from "@/messaging/message-types";
+import type { ScanSession } from "@/types/models";
 import { validateExtensionRequest } from "@/messaging/message-validation";
 import { clampScanConfig } from "@/utils/defaults";
 import { broadcast } from "./broadcast";
@@ -23,13 +23,13 @@ import { getGrantedOrigins, hasOriginPermission, revokeOrigin } from "./permissi
 import {
   clearScanHistory,
   deleteScanSession,
+  failScanSessionStart,
   stopScanSession,
   stopSessionsForRemovedOrigins
 } from "./session-lifecycle";
 import {
   activeSessionIdForTab,
   createSession,
-  finishSession,
   incompleteSessions,
   patchSession
 } from "./session-manager";
@@ -44,14 +44,26 @@ async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   return (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
 }
 
-async function snapshot(sessionId?: string): Promise<AppSnapshot> {
+export function selectSnapshotSession(
+  sessions: readonly ScanSession[],
+  activeTab: AppSnapshot["activeTab"],
+  sessionId?: string,
+  mappedSessionId?: string
+): ScanSession | undefined {
+  if (sessionId) return sessions.find((session) => session.id === sessionId);
+  if (!activeTab) return undefined;
+  if (mappedSessionId) {
+    const mapped = sessions.find((session) => session.id === mappedSessionId);
+    if (mapped?.tabId === activeTab.id && mapped.origin === activeTab.origin) return mapped;
+  }
+  return sessions.find(
+    (session) => session.tabId === activeTab.id && session.origin === activeTab.origin
+  );
+}
+
+async function snapshot(downloads: DownloadManager, sessionId?: string): Promise<AppSnapshot> {
   const tab = await getActiveTab();
   const sessions = await listSessions();
-  const activeId =
-    sessionId ?? (tab?.id !== undefined ? await activeSessionIdForTab(tab.id) : undefined);
-  const activeSession = activeId
-    ? sessions.find((session) => session.id === activeId)
-    : sessions[0];
   let activeTab: AppSnapshot["activeTab"];
   if (tab?.id !== undefined && tab.url) {
     try {
@@ -61,12 +73,15 @@ async function snapshot(sessionId?: string): Promise<AppSnapshot> {
       activeTab = undefined;
     }
   }
+  const mappedSessionId =
+    !sessionId && activeTab ? await activeSessionIdForTab(activeTab.id) : undefined;
+  const activeSession = selectSnapshotSession(sessions, activeTab, sessionId, mappedSessionId);
   return {
     ...(activeTab ? { activeTab } : {}),
     ...(activeSession ? { activeSession } : {}),
     sessions,
     files: activeSession ? await listFiles(activeSession.id) : [],
-    downloads: await listDownloads(),
+    downloads: await downloads.getSnapshot(),
     settings: await getSettings(),
     incompleteSessions: await incompleteSessions()
   };
@@ -103,19 +118,19 @@ export class MessageRouter {
       case "GET_ACTIVE_CONTEXT":
         return getActiveTab();
       case "GET_SNAPSHOT":
-        return snapshot(message.payload?.sessionId);
+        return snapshot(this.#downloads, message.payload?.sessionId);
+      case "GET_DOWNLOADS":
+        return this.#downloads.getSnapshot();
       case "SCAN_CURRENT_PAGE": {
         const tab = await getTab(message.payload.tabId);
         const session = await createSession(tab, "current_page");
-        await injectPageScanner(session.id, session.tabId);
-        setTimeout(() => {
-          void getSession(session.id)
-            .then((current) => {
-              if (current?.status === "running") return finishSession(current.id, "completed");
-              return undefined;
-            })
-            .catch(() => undefined);
-        }, 1500);
+        try {
+          await chrome.alarms.create(`scan:${session.id}`, { when: Date.now() + 30_000 });
+          await injectPageScanner(session.id, session.tabId);
+        } catch (error) {
+          await failScanSessionStart(session, error).catch(() => undefined);
+          throw error;
+        }
         return session;
       }
       case "START_LIVE_MONITOR": {
@@ -127,14 +142,19 @@ export class MessageRouter {
           throw new TypeError("当前网站权限尚未授予。");
         const settings = await getSettings();
         const session = await createSession(tab, "live_monitor");
-        await injectPageScanner(session.id, session.tabId);
-        await chrome.tabs.sendMessage(session.tabId, {
-          type: "START_CONTENT_MONITOR",
-          payload: { durationMs: settings.monitorDurationSeconds * 1000 }
-        });
-        await chrome.alarms.create(`monitor:${session.id}`, {
-          when: Date.now() + settings.monitorDurationSeconds * 1000
-        });
+        try {
+          await injectPageScanner(session.id, session.tabId);
+          await chrome.tabs.sendMessage(session.tabId, {
+            type: "START_CONTENT_MONITOR",
+            payload: { durationMs: settings.monitorDurationSeconds * 1000 }
+          });
+          await chrome.alarms.create(`monitor:${session.id}`, {
+            when: Date.now() + settings.monitorDurationSeconds * 1000
+          });
+        } catch (error) {
+          await failScanSessionStart(session, error).catch(() => undefined);
+          throw error;
+        }
         return session;
       }
       case "START_RECURSIVE_CRAWL": {
@@ -232,6 +252,7 @@ export class MessageRouter {
         return undefined;
       case "CLEAR_ALL_DATA":
         for (const session of await listSessions()) await stopScanSession(session);
+        await this.#downloads.clearAll();
         await clearDatabase();
         await chrome.storage.local.clear();
         await chrome.storage.session.clear();

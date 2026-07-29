@@ -7,6 +7,7 @@ describe("extension message validation", () => {
       validateExtensionRequest({ type: "SCAN_CURRENT_PAGE", payload: { tabId: 7 } }).success
     ).toBe(true);
     expect(validateExtensionRequest({ type: "CLEAR_HISTORY" }).success).toBe(true);
+    expect(validateExtensionRequest({ type: "GET_DOWNLOADS" }).success).toBe(true);
   });
 
   it.each([

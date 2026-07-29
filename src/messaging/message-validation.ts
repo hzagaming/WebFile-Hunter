@@ -122,6 +122,7 @@ export const extensionRequestSchema = z.discriminatedUnion("type", [
       payload: z.object({ sessionId: sessionId.optional() }).strict().optional()
     })
     .strict(),
+  z.object({ type: z.literal("GET_DOWNLOADS") }).strict(),
   z
     .object({ type: z.literal("SCAN_CURRENT_PAGE"), payload: z.object({ tabId }).strict() })
     .strict(),

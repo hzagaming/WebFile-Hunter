@@ -1,32 +1,48 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { sendMessage, subscribeEvents } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
+import type { AppSettings, DownloadTask } from "@/types/models";
 
 export function useAppSnapshot() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const refreshGeneration = useRef(0);
 
   const refresh = useCallback(async (sessionId?: string) => {
+    const generation = ++refreshGeneration.current;
     setLoading(true);
     try {
-      setSnapshot(
-        await sendMessage<AppSnapshot>({
-          type: "GET_SNAPSHOT",
-          ...(sessionId ? { payload: { sessionId } } : {})
-        })
-      );
+      const next = await sendMessage<AppSnapshot>({
+        type: "GET_SNAPSHOT",
+        ...(sessionId ? { payload: { sessionId } } : {})
+      });
+      if (generation !== refreshGeneration.current) return;
+      setSnapshot(next);
       setError(undefined);
     } catch (value) {
+      if (generation !== refreshGeneration.current) return;
       setError(value instanceof Error ? value.message : "无法读取扩展状态。");
     } finally {
-      setLoading(false);
+      if (generation === refreshGeneration.current) setLoading(false);
     }
+  }, []);
+
+  const updateDownloads = useCallback((downloads: DownloadTask[]) => {
+    setSnapshot((current) => (current ? { ...current, downloads } : current));
+  }, []);
+
+  const updateSettings = useCallback((settings: AppSettings) => {
+    setSnapshot((current) => (current ? { ...current, settings } : current));
   }, []);
 
   useEffect(() => {
     const initialLoad = setTimeout(() => void refresh(), 0);
     const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "ACTIVE_CONTEXT_CHANGED") {
+        void refresh();
+        return;
+      }
       if (event.type === "APP_ERROR") {
         setError(event.payload.message);
         return;
@@ -40,10 +56,14 @@ export function useAppSnapshot() {
                 session.id === event.payload.id ? event.payload : session
               )
             : [event.payload, ...current.sessions];
+          const belongsToActiveContext =
+            !current.activeSession &&
+            current.activeTab?.id === event.payload.tabId &&
+            current.activeTab.origin === event.payload.origin;
           return {
             ...current,
             sessions,
-            ...(current.activeSession?.id === event.payload.id || !current.activeSession
+            ...(current.activeSession?.id === event.payload.id || belongsToActiveContext
               ? { activeSession: event.payload }
               : {})
           };
@@ -60,10 +80,20 @@ export function useAppSnapshot() {
       });
     });
     return () => {
+      refreshGeneration.current += 1;
       clearTimeout(initialLoad);
       unsubscribe();
     };
   }, [refresh]);
 
-  return { snapshot, setSnapshot, loading, error, setError, refresh };
+  return {
+    snapshot,
+    setSnapshot,
+    loading,
+    error,
+    setError,
+    refresh,
+    updateDownloads,
+    updateSettings
+  };
 }

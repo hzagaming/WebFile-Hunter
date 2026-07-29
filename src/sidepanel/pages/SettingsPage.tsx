@@ -8,6 +8,7 @@ import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice"
 interface Props {
   snapshot: AppSnapshot;
   refresh: (sessionId?: string) => Promise<void>;
+  updateSettings?: (settings: AppSettings) => void;
   standalone?: boolean;
 }
 
@@ -42,27 +43,19 @@ function formatCustomMap(value: Record<string, FileCategory>, separator: string)
     .join(separator);
 }
 
-export function SettingsPage({ snapshot, refresh, standalone = false }: Props) {
-  const [sourceSettings, setSourceSettings] = useState(snapshot.settings);
-  const [settings, setSettings] = useState<AppSettings>(snapshot.settings);
+export function SettingsPage({ snapshot, refresh, updateSettings, standalone = false }: Props) {
+  const [settingsDraft, setSettings] = useState<AppSettings>();
+  const settings = settingsDraft ?? snapshot.settings;
   const [origins, setOrigins] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [working, setWorking] = useState(false);
-  const [customExtensions, setCustomExtensions] = useState(() =>
-    formatCustomMap(snapshot.settings.customExtensions, ", ")
-  );
-  const [customMimes, setCustomMimes] = useState(() =>
-    formatCustomMap(snapshot.settings.customMimeTypes, "\n")
-  );
+  const [customExtensionsDraft, setCustomExtensions] = useState<string>();
+  const customExtensions =
+    customExtensionsDraft ?? formatCustomMap(snapshot.settings.customExtensions, ", ");
+  const [customMimesDraft, setCustomMimes] = useState<string>();
+  const customMimes = customMimesDraft ?? formatCustomMap(snapshot.settings.customMimeTypes, "\n");
   const fail = (error: unknown, fallback: string): void =>
     setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
-
-  if (snapshot.settings !== sourceSettings) {
-    setSourceSettings(snapshot.settings);
-    setSettings(snapshot.settings);
-    setCustomExtensions(formatCustomMap(snapshot.settings.customExtensions, ", "));
-    setCustomMimes(formatCustomMap(snapshot.settings.customMimeTypes, "\n"));
-  }
 
   useEffect(() => {
     let active = true;
@@ -88,7 +81,12 @@ export function SettingsPage({ snapshot, refresh, standalone = false }: Props) {
     setFeedback(undefined);
     try {
       await sendMessage({ type: "SAVE_SETTINGS", payload: { settings: next } });
-      setSettings(next);
+      updateSettings?.(next);
+      setSettings(updateSettings ? undefined : next);
+      setCustomExtensions(
+        updateSettings ? undefined : formatCustomMap(next.customExtensions, ", ")
+      );
+      setCustomMimes(updateSettings ? undefined : formatCustomMap(next.customMimeTypes, "\n"));
       setFeedback({ kind: "success", text: "设置已保存到本地浏览器。" });
       await refresh(snapshot.activeSession?.id);
     } catch (error) {
@@ -120,9 +118,10 @@ export function SettingsPage({ snapshot, refresh, standalone = false }: Props) {
     try {
       await sendMessage({ type: "CLEAR_ALL_DATA" });
       const defaults = structuredClone(DEFAULT_SETTINGS);
-      setSettings(defaults);
-      setCustomExtensions("");
-      setCustomMimes("");
+      updateSettings?.(defaults);
+      setSettings(updateSettings ? undefined : defaults);
+      setCustomExtensions(updateSettings ? undefined : "");
+      setCustomMimes(updateSettings ? undefined : "");
       setFeedback({ kind: "success", text: "全部本地数据已清除，设置已恢复默认值。" });
       await refresh();
     } catch (error) {

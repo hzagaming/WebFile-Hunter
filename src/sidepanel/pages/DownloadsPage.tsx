@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
@@ -8,6 +8,7 @@ import type { DownloadTask } from "@/types/models";
 interface Props {
   snapshot: AppSnapshot;
   refresh: (sessionId?: string) => Promise<void>;
+  updateDownloads?: (downloads: DownloadTask[]) => void;
 }
 
 function taskProgress(task: DownloadTask): number | undefined {
@@ -15,9 +16,32 @@ function taskProgress(task: DownloadTask): number | undefined {
   return Math.min(100, Math.round((task.bytesReceived / task.totalBytes) * 100));
 }
 
-export function DownloadsPage({ snapshot, refresh }: Props) {
+export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [working, setWorking] = useState(false);
+  const hasActiveDownloads = snapshot.downloads.some((task) =>
+    ["starting", "in_progress"].includes(task.status)
+  );
+
+  useEffect(() => {
+    if (!hasActiveDownloads || !updateDownloads) return;
+    let active = true;
+    const sync = async () => {
+      try {
+        const downloads = await sendMessage<DownloadTask[]>({ type: "GET_DOWNLOADS" });
+        if (active) updateDownloads(downloads);
+      } catch {
+        // A later event or manual refresh can recover transient worker wake-up failures.
+      }
+    };
+    void sync();
+    const timer = setInterval(() => void sync(), 1000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [hasActiveDownloads, updateDownloads]);
+
   const act = async (
     action: "start" | "pause" | "resume" | "cancel" | "retry" | "clear_completed" | "open" | "show",
     taskId?: string

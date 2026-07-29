@@ -1,6 +1,6 @@
 import { getSession, purgeExpiredSessions } from "@/database/db";
 import { getSettings } from "@/database/settings";
-import { stopLiveMonitor } from "./session-lifecycle";
+import { failScanSessionStart, stopLiveMonitor } from "./session-lifecycle";
 
 export function registerAlarmHandlers(): void {
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -10,12 +10,21 @@ export function registerAlarmHandlers(): void {
         .catch(() => undefined);
       return;
     }
-    if (!alarm.name.startsWith("monitor:")) return;
-    const sessionId = alarm.name.slice("monitor:".length);
+    const alarmType = alarm.name.startsWith("monitor:")
+      ? "monitor"
+      : alarm.name.startsWith("scan:")
+        ? "scan"
+        : undefined;
+    if (!alarmType) return;
+    const sessionId = alarm.name.slice(alarmType.length + 1);
     void (async () => {
       const session = await getSession(sessionId);
-      if (!session || session.status !== "running" || session.mode !== "live_monitor") return;
-      await stopLiveMonitor(session, "completed");
-    })();
+      if (!session || session.status !== "running") return;
+      if (alarmType === "monitor" && session.mode === "live_monitor") {
+        await stopLiveMonitor(session, "completed");
+      } else if (alarmType === "scan" && session.mode === "current_page") {
+        await failScanSessionStart(session, new Error("页面扫描超时，请刷新页面后重试。"));
+      }
+    })().catch(() => undefined);
   });
 }

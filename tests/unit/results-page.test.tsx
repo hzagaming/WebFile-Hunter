@@ -4,20 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ResultsPage } from "@/sidepanel/pages/ResultsPage";
 import { appSnapshot, fileCandidate, scanSession } from "../helpers/fixtures";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), writeText: vi.fn() }));
 
 vi.mock("@/messaging/message-client", () => ({ sendMessage: mocks.sendMessage }));
 vi.mock("@/export/save-export", () => ({ saveExport: vi.fn() }));
 
 beforeEach(() => {
   mocks.sendMessage.mockReset().mockResolvedValue([]);
+  mocks.writeText.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal(
     "confirm",
     vi.fn(() => true)
   );
   Object.defineProperty(globalThis, "chrome", {
     configurable: true,
-    value: { tabs: { create: vi.fn() } }
+    value: { tabs: { create: vi.fn().mockResolvedValue(undefined) } }
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: mocks.writeText }
   });
 });
 
@@ -91,5 +96,43 @@ describe("ResultsPage", () => {
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("已加入 1 项，另有 1 项被安全规则跳过")
     );
+  });
+
+  it("分类状态和来源警告使用可访问的中文产品文案", () => {
+    const session = scanSession({ filesDiscovered: 1 });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({
+          activeSession: session,
+          files: [
+            fileCandidate("stream", {
+              source: "NETWORK_HEADER",
+              sources: ["NETWORK_HEADER"],
+              warnings: ["segmented_stream"]
+            })
+          ]
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByText("响应头")).not.toHaveLength(0);
+    expect(screen.getByText("分段流媒体，不能作为普通文件下载")).toBeInTheDocument();
+    expect(screen.queryByText("NETWORK_HEADER")).not.toBeInTheDocument();
+  });
+
+  it("单项复制失败时显示明确错误反馈", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mocks.writeText }
+    });
+    mocks.writeText.mockRejectedValueOnce(new Error("剪贴板不可用"));
+    renderResults();
+
+    await user.click(screen.getAllByRole("button", { name: "复制" })[0]!);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("剪贴板不可用");
   });
 });

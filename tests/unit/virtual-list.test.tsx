@@ -20,4 +20,50 @@ describe("VirtualList", () => {
     fireEvent.keyDown(region, { key: "End" });
     expect(region.scrollTop).toBe(40);
   });
+
+  it("筛选结果缩小时限制旧滚动位置，避免出现空白列表", () => {
+    const many = Array.from({ length: 20 }, (_, index) => `项目 ${index + 1}`);
+    const { rerender } = render(
+      <VirtualList
+        items={many}
+        itemHeight={40}
+        height={80}
+        getKey={(item) => item}
+        renderItem={(item) => <span>{item}</span>}
+      />
+    );
+    const region = screen.getByRole("region", { name: "扫描结果列表" });
+    region.scrollTop = 600;
+    fireEvent.scroll(region);
+
+    rerender(
+      <VirtualList
+        items={["唯一结果"]}
+        itemHeight={40}
+        height={80}
+        getKey={(item) => item}
+        renderItem={(item) => <span>{item}</span>}
+      />
+    );
+
+    expect(screen.getByText("唯一结果")).toBeInTheDocument();
+  });
+
+  it("键盘滚动保留底部操作栏所需的尾部空间", () => {
+    render(
+      <VirtualList
+        items={["一", "二", "三"]}
+        itemHeight={40}
+        height={80}
+        endPadding={24}
+        getKey={(item) => item}
+        renderItem={(item) => <span>{item}</span>}
+      />
+    );
+    const region = screen.getByRole("region", { name: "扫描结果列表" });
+
+    fireEvent.keyDown(region, { key: "End" });
+
+    expect(region.scrollTop).toBe(64);
+  });
 });

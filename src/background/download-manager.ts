@@ -9,15 +9,38 @@ import type { DownloadTask, FileCandidate } from "@/types/models";
 export class DownloadManager {
   #running = false;
   #paused = true;
+  #mutationTail: Promise<void> = Promise.resolve();
 
   constructor() {
-    chrome.downloads.onChanged.addListener((delta) => void this.#handleChanged(delta));
+    chrome.downloads.onChanged.addListener(
+      (delta) => void this.#handleChanged(delta).catch(() => undefined)
+    );
   }
 
-  async queue(candidateIds: readonly string[]): Promise<DownloadTask[]> {
+  queue(candidateIds: readonly string[]): Promise<DownloadTask[]> {
+    const requestedIds = [...candidateIds];
+    return this.#serializeMutation(() => this.#queueCandidates(requestedIds));
+  }
+
+  #serializeMutation<T>(mutation: () => Promise<T>): Promise<T> {
+    const operation = this.#mutationTail.then(mutation);
+    this.#mutationTail = operation.then(
+      () => undefined,
+      () => undefined
+    );
+    return operation;
+  }
+
+  async #queueCandidates(candidateIds: readonly string[]): Promise<DownloadTask[]> {
     const settings = await getSettings();
+    const activeCandidateIds = new Set(
+      (await listDownloads())
+        .filter((task) => ["queued", "starting", "in_progress"].includes(task.status))
+        .map((task) => task.candidateId)
+    );
     const tasks: DownloadTask[] = [];
     for (const candidateId of candidateIds) {
+      if (activeCandidateIds.has(candidateId)) continue;
       const candidate = await getFile(candidateId);
       if (!candidate) continue;
       const safety = inspectUrlSafety(candidate.finalUrl ?? candidate.canonicalUrl, {
@@ -41,6 +64,7 @@ export class DownloadManager {
         updatedAt: now
       };
       await putDownload(task);
+      activeCandidateIds.add(candidateId);
       tasks.push(task);
     }
     await this.#notify();
@@ -66,13 +90,28 @@ export class DownloadManager {
         await chrome.downloads.cancel(task.browserDownloadId);
       await putDownload({ ...task, status: "cancelled", updatedAt: Date.now() });
     } else if (action === "retry" && task) {
-      const retryable: DownloadTask = { ...task };
-      delete retryable.error;
-      delete retryable.browserDownloadId;
-      await putDownload({
-        ...retryable,
-        status: "queued",
-        updatedAt: Date.now()
+      await this.#serializeMutation(async () => {
+        const downloads = await listDownloads();
+        const current = downloads.find((item) => item.id === task.id);
+        if (
+          !current ||
+          !["failed", "interrupted", "cancelled"].includes(current.status) ||
+          downloads.some(
+            (item) =>
+              item.id !== current.id &&
+              item.candidateId === current.candidateId &&
+              ["queued", "starting", "in_progress"].includes(item.status)
+          )
+        )
+          return;
+        const retryable: DownloadTask = { ...current };
+        delete retryable.error;
+        delete retryable.browserDownloadId;
+        await putDownload({
+          ...retryable,
+          status: "queued",
+          updatedAt: Date.now()
+        });
       });
       await this.#pump();
     } else if (action === "clear_completed") {
@@ -84,6 +123,44 @@ export class DownloadManager {
       if (action === "open") await chrome.downloads.open(task.browserDownloadId);
       else chrome.downloads.show(task.browserDownloadId);
     }
+    await this.#notify();
+  }
+
+  async getSnapshot(): Promise<DownloadTask[]> {
+    const tasks = await listDownloads();
+    return Promise.all(tasks.map((task) => this.#syncBrowserState(task)));
+  }
+
+  async reconcile(): Promise<void> {
+    const tasks = await listDownloads();
+    for (const task of tasks) {
+      if (!["starting", "in_progress"].includes(task.status)) continue;
+      if (task.browserDownloadId === undefined) {
+        await putDownload({
+          ...task,
+          status: "failed",
+          error: "后台已重启，下载任务尚未获得浏览器下载 ID。",
+          updatedAt: Date.now()
+        });
+        continue;
+      }
+      await this.#syncBrowserState(task);
+    }
+    await this.#notify();
+  }
+
+  async clearAll(): Promise<void> {
+    this.#paused = true;
+    await this.#serializeMutation(async () => {
+      const tasks = await listDownloads();
+      const activeBrowserIds = tasks
+        .filter((task) => ["starting", "in_progress"].includes(task.status))
+        .flatMap((task) => (task.browserDownloadId === undefined ? [] : [task.browserDownloadId]));
+      await Promise.all(
+        activeBrowserIds.map((id) => chrome.downloads.cancel(id).catch(() => undefined))
+      );
+      await deleteDownloads(tasks.map((task) => task.id));
+    });
     await this.#notify();
   }
 
@@ -161,6 +238,60 @@ export class DownloadManager {
     await putDownload(updated);
     await this.#notify();
     if (state === "complete" || state === "interrupted") await this.#pump();
+  }
+
+  async #syncBrowserState(task: DownloadTask): Promise<DownloadTask> {
+    if (
+      task.browserDownloadId === undefined ||
+      !["starting", "in_progress"].includes(task.status)
+    ) {
+      return task;
+    }
+    let browserTask: chrome.downloads.DownloadItem | undefined;
+    try {
+      [browserTask] = await chrome.downloads.search({ id: task.browserDownloadId });
+    } catch {
+      return task;
+    }
+    if (!browserTask) {
+      const missing: DownloadTask = {
+        ...task,
+        status: "interrupted",
+        error: "后台恢复时未找到对应的浏览器下载任务。",
+        updatedAt: Date.now()
+      };
+      await putDownload(missing);
+      return missing;
+    }
+
+    const status: DownloadTask["status"] =
+      browserTask.state === "complete"
+        ? "completed"
+        : browserTask.state === "interrupted"
+          ? "interrupted"
+          : "in_progress";
+    const totalBytes = browserTask.totalBytes > 0 ? browserTask.totalBytes : undefined;
+    const error = status === "interrupted" ? (browserTask.error ?? "下载被中断。") : undefined;
+    if (
+      task.status === status &&
+      task.bytesReceived === browserTask.bytesReceived &&
+      task.totalBytes === totalBytes &&
+      task.error === error
+    ) {
+      return task;
+    }
+    const updated: DownloadTask = {
+      ...task,
+      status,
+      bytesReceived: browserTask.bytesReceived,
+      updatedAt: Date.now()
+    };
+    if (totalBytes !== undefined) updated.totalBytes = totalBytes;
+    else delete updated.totalBytes;
+    if (error !== undefined) updated.error = error;
+    else delete updated.error;
+    await putDownload(updated);
+    return updated;
   }
 
   async #buildFilename(candidate: FileCandidate): Promise<string> {
