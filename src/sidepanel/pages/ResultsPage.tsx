@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
 import { exportCsv } from "@/export/export-csv";
@@ -69,7 +69,14 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [busy, setBusy] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const session = snapshot.activeSession;
+
+  useEffect(() => {
+    const updateViewportHeight = (): void => setViewportHeight(window.innerHeight);
+    window.addEventListener("resize", updateViewportHeight);
+    return () => window.removeEventListener("resize", updateViewportHeight);
+  }, []);
 
   const { filtered, regexError } = useMemo(() => {
     let matcher: RegExp | undefined;
@@ -408,8 +415,8 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       {filtered.length ? (
         <VirtualList
           items={filtered}
-          itemHeight={176}
-          height={Math.max(320, innerHeight - 390)}
+          itemHeight={216}
+          height={Math.max(320, viewportHeight - 390)}
           endPadding={72}
           getKey={(file) => file.id}
           renderItem={(file) => (

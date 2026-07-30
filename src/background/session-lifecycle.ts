@@ -120,16 +120,14 @@ export async function reconcileInterruptedSessions(): Promise<void> {
   for (const session of await listSessions()) {
     if (session.mode !== "recursive_crawl" || session.status !== "running") continue;
     const checkpoint = await getCheckpoint(session.id);
-    await patchSession(
-      session.id,
-      checkpoint
-        ? { status: "paused" }
-        : {
-            status: "failed",
-            completedAt: Date.now(),
-            errorMessage: "后台已重启，且任务没有可恢复的检查点。"
-          }
-    );
+    if (checkpoint) {
+      await patchSession(session.id, { status: "paused" });
+    } else {
+      await finishSession(session.id, "failed");
+      await patchSession(session.id, {
+        errorMessage: "后台已重启，且任务没有可恢复的检查点。"
+      });
+    }
   }
 }
 

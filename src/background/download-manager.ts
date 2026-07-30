@@ -153,15 +153,32 @@ export class DownloadManager {
     this.#paused = true;
     await this.#serializeMutation(async () => {
       const tasks = await listDownloads();
+      if (
+        tasks.some((task) => task.status === "starting" && task.browserDownloadId === undefined)
+      ) {
+        throw new TypeError("有下载任务正在启动，请稍后再清除本地数据。");
+      }
       const activeBrowserIds = tasks
         .filter((task) => ["starting", "in_progress"].includes(task.status))
         .flatMap((task) => (task.browserDownloadId === undefined ? [] : [task.browserDownloadId]));
-      await Promise.all(
-        activeBrowserIds.map((id) => chrome.downloads.cancel(id).catch(() => undefined))
-      );
+      await Promise.all(activeBrowserIds.map((id) => this.#cancelForClear(id)));
       await deleteDownloads(tasks.map((task) => task.id));
     });
     await this.#notify();
+  }
+
+  async #cancelForClear(browserDownloadId: number): Promise<void> {
+    try {
+      await chrome.downloads.cancel(browserDownloadId);
+    } catch (error) {
+      let browserTask: chrome.downloads.DownloadItem | undefined;
+      try {
+        [browserTask] = await chrome.downloads.search({ id: browserDownloadId });
+      } catch {
+        throw error;
+      }
+      if (browserTask?.state === "in_progress") throw error;
+    }
   }
 
   async #pump(): Promise<void> {

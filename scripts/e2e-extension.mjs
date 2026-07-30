@@ -39,9 +39,45 @@ async function assertNoHorizontalOverflow(page, label) {
 }
 
 async function assertResponsive(page, label) {
-  for (const width of [320, 380]) {
+  for (const width of [280, 320, 380]) {
     await page.setViewportSize({ width, height: 820 });
     await assertNoHorizontalOverflow(page, `${label}（${width}px）`);
+  }
+}
+
+async function assertResultCardControls(page, filename) {
+  for (const width of [280, 320, 380]) {
+    await page.setViewportSize({ width, height: 820 });
+    const card = page.locator(".result-card").filter({
+      has: page.getByTitle(filename, { exact: true })
+    });
+    await card.waitFor();
+    const bounds = await card.evaluate((element) => {
+      const cardBox = element.getBoundingClientRect();
+      const actions = element.querySelector(".card-actions")?.getBoundingClientRect();
+      const visibleButtons = [...element.querySelectorAll(".card-actions button")].filter(
+        (button) => {
+          const box = button.getBoundingClientRect();
+          return box.width > 0 && box.height > 0;
+        }
+      ).length;
+      return {
+        cardTop: cardBox.top,
+        cardBottom: cardBox.bottom,
+        actionsTop: actions?.top,
+        actionsBottom: actions?.bottom,
+        visibleButtons
+      };
+    });
+    if (
+      bounds.actionsTop === undefined ||
+      bounds.actionsBottom === undefined ||
+      bounds.actionsTop < bounds.cardTop ||
+      bounds.actionsBottom > bounds.cardBottom ||
+      bounds.visibleButtons !== 4
+    ) {
+      throw new Error(`极端结果卡操作区被裁切（${width}px）：${JSON.stringify(bounds)}`);
+    }
   }
 }
 
@@ -54,17 +90,20 @@ async function assertActiveNavigation(page, label) {
 }
 
 async function assertLastResultUnobscured(page) {
-  const list = page.getByRole("region", { name: "扫描结果列表" });
-  await list.focus();
-  await list.press("End");
-  const positions = await page.evaluate(() => {
-    const items = document.querySelectorAll('[role="listitem"]');
-    const last = items.item(items.length - 1).getBoundingClientRect();
-    const actions = document.querySelector(".sticky-actions")?.getBoundingClientRect();
-    return { lastBottom: last.bottom, actionsTop: actions?.top };
-  });
-  if (positions.actionsTop === undefined || positions.lastBottom > positions.actionsTop) {
-    throw new Error(`末项被批量操作栏遮挡：${JSON.stringify(positions)}`);
+  for (const width of [280, 320, 380]) {
+    await page.setViewportSize({ width, height: 820 });
+    const list = page.getByRole("region", { name: "扫描结果列表" });
+    await list.focus();
+    await list.press("End");
+    const positions = await page.evaluate(() => {
+      const items = document.querySelectorAll('[role="listitem"]');
+      const last = items.item(items.length - 1).getBoundingClientRect();
+      const actions = document.querySelector(".sticky-actions")?.getBoundingClientRect();
+      return { lastBottom: last.bottom, actionsTop: actions?.top };
+    });
+    if (positions.actionsTop === undefined || positions.lastBottom > positions.actionsTop) {
+      throw new Error(`末项被批量操作栏遮挡（${width}px）：${JSON.stringify(positions)}`);
+    }
   }
 }
 
@@ -110,6 +149,24 @@ async function databaseRows(worker) {
           transaction.onerror = () => reject(transaction.error);
         };
       })
+  );
+}
+
+async function putDatabaseFile(worker, file) {
+  await worker.evaluate(
+    (value) =>
+      new Promise((resolvePromise, reject) => {
+        const request = indexedDB.open("webfile-hunter");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("files", "readwrite");
+          transaction.objectStore("files").put(value);
+          transaction.oncomplete = () => resolvePromise();
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+    file
   );
 }
 
@@ -209,6 +266,40 @@ try {
   );
   await send(permissionPage, { type: "STOP_SCAN", payload: { sessionId: liveSession.id } });
 
+  const extremeFilename = `${"超长文件名-".repeat(12)}fixture.extremelylongextension`;
+  await putDatabaseFile(worker, {
+    ...currentFiles[0],
+    id: "file-e2e-extreme",
+    sessionId: liveSession.id,
+    originalUrl: `${server.origin}/files/${encodeURIComponent(extremeFilename)}`,
+    canonicalUrl: `${server.origin}/files/${encodeURIComponent(extremeFilename)}`,
+    filename: extremeFilename,
+    extension: "extremelylongextension",
+    mimeType: `application/vnd.${"very-long-vendor-tree-".repeat(8)}fixture+json`,
+    confidence: 100,
+    sources: [
+      "DOM_ATTRIBUTE",
+      "DOWNLOAD_ATTRIBUTE",
+      "CSS_URL",
+      "PERFORMANCE_ENTRY",
+      "NETWORK_REQUEST",
+      "NETWORK_HEADER",
+      "CRAWLED_PAGE",
+      "MANUAL_URL"
+    ],
+    warnings: ["temporary_url", "temporary_blob", "segmented_stream", "mime_extension_conflict"],
+    discoveredAt: Date.now(),
+    updatedAt: Date.now()
+  });
+  const rowsWithExtreme = await databaseRows(worker);
+  if (
+    !rowsWithExtreme.files.some(
+      (file) => file.id === "file-e2e-extreme" && file.sessionId === liveSession.id
+    )
+  ) {
+    throw new Error("极端结果卡夹具未写入实时监听会话。");
+  }
+
   const sidepanelPage = await context.newPage();
   watchPage(sidepanelPage, "sidepanel");
   await sidepanelPage.setViewportSize({ width: 380, height: 820 });
@@ -251,7 +342,12 @@ try {
     (title) => title === fixturePage.url()
   );
 
-  await sidepanelPage.getByRole("button", { name: "结果", exact: true }).click();
+  await sidepanelPage.getByRole("button", { name: "历史", exact: true }).click();
+  const liveHistoryCard = sidepanelPage
+    .locator(".history-card")
+    .filter({ hasText: "实时监听" })
+    .first();
+  await liveHistoryCard.getByRole("button", { name: "打开结果" }).click();
   await sidepanelPage.getByRole("heading", { name: /发现结果/ }).waitFor();
   await assertResponsive(sidepanelPage, "结果页");
   await assertActiveNavigation(sidepanelPage, "结果");
@@ -259,6 +355,7 @@ try {
     path: resolve("test-results/edge-results-380.png"),
     fullPage: true
   });
+  await assertResultCardControls(sidepanelPage, extremeFilename);
   await assertLastResultUnobscured(sidepanelPage);
 
   await sidepanelPage.getByRole("button", { name: "下载", exact: true }).click();

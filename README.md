@@ -153,7 +153,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v0.2.1.zip
+release/webfile-hunter-v0.2.2.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。

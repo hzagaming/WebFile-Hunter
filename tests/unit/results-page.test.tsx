@@ -135,4 +135,16 @@ describe("ResultsPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("剪贴板不可用");
   });
+
+  it("窗口高度变化时同步调整虚拟结果列表高度", () => {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+    renderResults();
+    const list = screen.getByRole("region", { name: "扫描结果列表" });
+    expect(list).toHaveStyle({ height: "410px" });
+
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 1000 });
+    fireEvent(window, new Event("resize"));
+
+    expect(list).toHaveStyle({ height: "610px" });
+  });
 });

@@ -7,17 +7,37 @@ import type { ScanConfig, ScanMode, ScanSession, ScanStatus } from "@/types/mode
 const ACTIVE_BY_TAB_KEY = "activeSessionByTab";
 const LIVE_BY_TAB_KEY = "liveSessionByTab";
 let createTail: Promise<void> = Promise.resolve();
+let storageMutationTail: Promise<void> = Promise.resolve();
+
+function serializeStorageMutation<T>(mutation: () => Promise<T>): Promise<T> {
+  const operation = storageMutationTail.then(mutation);
+  storageMutationTail = operation.then(
+    () => undefined,
+    () => undefined
+  );
+  return operation;
+}
 
 async function mapFromSessionStorage(key: string): Promise<Record<string, string>> {
   const result = await chrome.storage.session.get(key);
   return (result[key] as Record<string, string> | undefined) ?? {};
 }
 
-async function setMapValue(key: string, tabId: number, sessionId?: string): Promise<void> {
-  const current = await mapFromSessionStorage(key);
-  if (sessionId) current[String(tabId)] = sessionId;
-  else delete current[String(tabId)];
-  await chrome.storage.session.set({ [key]: current });
+function mutateMap(
+  key: string,
+  mutation: (current: Record<string, string>) => void
+): Promise<void> {
+  return serializeStorageMutation(async () => {
+    const current = await mapFromSessionStorage(key);
+    mutation(current);
+    await chrome.storage.session.set({ [key]: current });
+  });
+}
+
+function setMapValue(key: string, tabId: number, sessionId: string): Promise<void> {
+  return mutateMap(key, (current) => {
+    current[String(tabId)] = sessionId;
+  });
 }
 
 async function clearMapValueIfMatches(
@@ -25,10 +45,9 @@ async function clearMapValueIfMatches(
   tabId: number,
   sessionId: string
 ): Promise<void> {
-  const current = await mapFromSessionStorage(key);
-  if (current[String(tabId)] !== sessionId) return;
-  delete current[String(tabId)];
-  await chrome.storage.session.set({ [key]: current });
+  await mutateMap(key, (current) => {
+    if (current[String(tabId)] === sessionId) delete current[String(tabId)];
+  });
 }
 
 export async function activeSessionIdForTab(tabId: number): Promise<string | undefined> {
@@ -51,10 +70,7 @@ export function createSession(
       throw new TypeError("仅支持 HTTP 或 HTTPS 网页。");
     }
     const active = (await listSessions()).find(
-      (session) =>
-        session.tabId === tab.id &&
-        session.origin === url.origin &&
-        ["running", "paused"].includes(session.status)
+      (session) => session.tabId === tab.id && ["running", "paused"].includes(session.status)
     );
     if (active) throw new TypeError("当前标签页已有进行中的任务，请先停止后再重试。");
 
@@ -127,5 +143,7 @@ export async function incompleteSessions(): Promise<ScanSession[]> {
 }
 
 export async function clearRuntimeSessionState(): Promise<void> {
-  await chrome.storage.session.remove([ACTIVE_BY_TAB_KEY, LIVE_BY_TAB_KEY]);
+  await serializeStorageMutation(() =>
+    chrome.storage.session.remove([ACTIVE_BY_TAB_KEY, LIVE_BY_TAB_KEY])
+  );
 }

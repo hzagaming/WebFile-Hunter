@@ -553,7 +553,7 @@ h3 {
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
-  height: 167px;
+  height: 207px;
   margin: 0 4px 9px;
   padding: 12px 10px 10px 38px;
   border: 1px solid var(--line);
@@ -608,6 +608,7 @@ h3 {
 }
 .result-body {
   min-width: 0;
+  overflow: hidden;
 }
 .result-body h3,
 .download-card h3 {
@@ -624,17 +625,25 @@ h3 {
   gap: 4px;
   margin-top: 7px;
 }
+.metadata {
+  max-height: 38px;
+  overflow: hidden;
+}
 .badges {
   max-height: 38px;
   overflow: hidden;
 }
 .metadata span,
 .badges span {
+  max-width: 100%;
+  overflow: hidden;
   padding: 3px 6px;
   border-radius: 5px;
   color: #516a77;
   background: #edf3f5;
   font-size: 9px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .badges span.warning {
   color: #79510d;

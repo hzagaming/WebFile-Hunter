@@ -146,6 +146,18 @@ describe("scan session lifecycle", () => {
     expect(mocks.patchSession).toHaveBeenCalledWith(recursive.id, { status: "paused" });
   });
 
+  it("后台重启后以失败终态清理无检查点递归任务", async () => {
+    const recursive = liveSession({ id: "session-recursive", mode: "recursive_crawl" });
+    mocks.listSessions.mockResolvedValue([recursive]);
+
+    await reconcileInterruptedSessions();
+
+    expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "failed");
+    expect(mocks.patchSession).toHaveBeenCalledWith(recursive.id, {
+      errorMessage: "后台已重启，且任务没有可恢复的检查点。"
+    });
+  });
+
   it("监听启动失败时清理内容监听和 alarm，并记录失败原因", async () => {
     const session = liveSession();
 

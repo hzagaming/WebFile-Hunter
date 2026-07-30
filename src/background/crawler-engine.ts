@@ -32,6 +32,14 @@ interface ActiveCrawl {
 }
 
 const activeCrawls = new Map<string, ActiveCrawl>();
+const resumingCrawls = new Set<string>();
+
+async function failCrawler(sessionId: string, error: unknown, fallback: string): Promise<void> {
+  await finishSession(sessionId, "failed");
+  await patchSession(sessionId, {
+    errorMessage: error instanceof Error ? error.message : fallback
+  });
+}
 
 async function loadRobots(session: ScanSession, active: ActiveCrawl): Promise<RobotsRules> {
   if (!session.config.respectRobots) return parseRobotsTxt("");
@@ -288,11 +296,7 @@ async function run(
     }
   } catch (error) {
     if (!controller.signal.aborted) {
-      await patchSession(session.id, {
-        status: "failed",
-        completedAt: Date.now(),
-        errorMessage: error instanceof Error ? error.message : "递归扫描失败。"
-      });
+      await failCrawler(session.id, error, "递归扫描失败。");
     }
   } finally {
     activeCrawls.delete(session.id);
@@ -304,35 +308,55 @@ export function startCrawler(session: ScanSession): void {
 }
 
 export async function pauseCrawler(sessionId: string): Promise<void> {
+  const session = await getSession(sessionId);
   const active = activeCrawls.get(sessionId);
-  active?.controller.abort();
-  active?.limiter.cancel();
-  if (active?.queue && active.visited) {
-    const queued = active.queue.snapshot().items;
-    const pending = [
-      ...active.inFlight.filter((item) => !active.visited?.has(item.url)),
-      ...queued
-    ];
-    await persistCrawlerCheckpoint(sessionId, pending, active.visited);
+  if (!session || session.mode !== "recursive_crawl" || session.status !== "running" || !active) {
+    throw new TypeError("仅可暂停当前正在运行的递归任务。");
   }
-  await patchSession(sessionId, { status: "paused" });
+  active.controller.abort();
+  active.limiter.cancel();
+  try {
+    if (active.queue && active.visited) {
+      const queued = active.queue.snapshot().items;
+      const pending = [
+        ...active.inFlight.filter((item) => !active.visited?.has(item.url)),
+        ...queued
+      ];
+      await persistCrawlerCheckpoint(sessionId, pending, active.visited);
+    }
+    await patchSession(sessionId, { status: "paused" });
+  } catch (error) {
+    await failCrawler(sessionId, error, "暂停递归任务时无法保存检查点。");
+    throw error;
+  }
 }
 
 export async function resumeCrawler(sessionId: string): Promise<void> {
-  const session = await getSession(sessionId);
-  const checkpoint = await getCheckpoint(sessionId);
-  if (!session || !checkpoint) throw new TypeError("没有可恢复的递归任务检查点。");
-  if (!(await hasOriginPermission(session.startUrl))) {
-    throw new TypeError("当前网站权限已被撤销，无法恢复递归任务。");
+  if (resumingCrawls.has(sessionId) || activeCrawls.has(sessionId)) {
+    throw new TypeError("递归任务正在恢复或运行中。");
   }
-  const queue = new CrawlerQueue(
-    session.config.maxDepth,
-    session.config.maxPages,
-    checkpoint.queue.sort((a, b) => a.order - b.order),
-    [...checkpoint.visitedUrls, ...checkpoint.queue.map((item) => item.url)]
-  );
-  const updated = await patchSession(sessionId, { status: "running" });
-  void run(updated, { queue, visited: new Set(checkpoint.visitedUrls) });
+  resumingCrawls.add(sessionId);
+  try {
+    const session = await getSession(sessionId);
+    if (!session || session.mode !== "recursive_crawl" || session.status !== "paused") {
+      throw new TypeError("仅可恢复已暂停的递归任务。");
+    }
+    const checkpoint = await getCheckpoint(sessionId);
+    if (!checkpoint) throw new TypeError("没有可恢复的递归任务检查点。");
+    if (!(await hasOriginPermission(session.startUrl))) {
+      throw new TypeError("当前网站权限已被撤销，无法恢复递归任务。");
+    }
+    const queue = new CrawlerQueue(
+      session.config.maxDepth,
+      session.config.maxPages,
+      checkpoint.queue.sort((a, b) => a.order - b.order),
+      [...checkpoint.visitedUrls, ...checkpoint.queue.map((item) => item.url)]
+    );
+    const updated = await patchSession(sessionId, { status: "running" });
+    void run(updated, { queue, visited: new Set(checkpoint.visitedUrls) });
+  } finally {
+    resumingCrawls.delete(sessionId);
+  }
 }
 
 export async function cancelCrawler(sessionId: string): Promise<void> {

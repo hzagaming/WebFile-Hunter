@@ -61,7 +61,9 @@ describe("handlePageScanResult security", () => {
   });
 
   it("当前页任务完成后仍接受其他 frame 的迟到结果", async () => {
-    mocks.getSession.mockResolvedValue(scanSession({ status: "completed" }));
+    mocks.getSession.mockResolvedValue(
+      scanSession({ status: "completed", completedAt: Date.now() - 1_000 })
+    );
 
     await expect(
       handlePageScanResult(
@@ -73,5 +75,36 @@ describe("handlePageScanResult security", () => {
     ).resolves.toBe(0);
     expect(mocks.putFiles).toHaveBeenCalled();
     expect(mocks.finishSession).not.toHaveBeenCalled();
+  });
+
+  it("拒绝超过 frame 收集窗口的旧当前页结果", async () => {
+    mocks.getSession.mockResolvedValue(
+      scanSession({ status: "completed", completedAt: Date.now() - 60_000 })
+    );
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        { pageUrl: "https://example.test/frame", title: "frame", resources: [], pages: [] },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).rejects.toThrow("已经停止");
+    expect(mocks.putFiles).not.toHaveBeenCalled();
+  });
+
+  it("系统时钟回拨时不接受未来终态的 frame 结果", async () => {
+    mocks.getSession.mockResolvedValue(
+      scanSession({ status: "completed", completedAt: Date.now() + 1_000 })
+    );
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        { pageUrl: "https://example.test/frame", title: "frame", resources: [], pages: [] },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).rejects.toThrow("已经停止");
   });
 });

@@ -18,6 +18,7 @@ const RESOURCE_TAGS = new Set([
   "script",
   "input"
 ]);
+const LATE_FRAME_WINDOW_MS = 30_000;
 
 export function shouldKeepPageResource(resource: RawResource): boolean {
   return (
@@ -61,7 +62,14 @@ export async function handlePageScanResult(
   liveBatch: boolean
 ): Promise<number> {
   const session = await getSession(sessionId);
-  const acceptsLateFrame = session?.mode === "current_page" && session.status === "completed";
+  const lateFrameAge =
+    session?.completedAt === undefined ? undefined : Date.now() - session.completedAt;
+  const acceptsLateFrame =
+    session?.mode === "current_page" &&
+    session.status === "completed" &&
+    lateFrameAge !== undefined &&
+    lateFrameAge >= 0 &&
+    lateFrameAge <= LATE_FRAME_WINDOW_MS;
   if (!session || (session.status !== "running" && !acceptsLateFrame))
     throw new TypeError("扫描任务无效或已经停止。");
   if (sender.tab?.id !== session.tabId) throw new TypeError("页面扫描结果来自错误的标签页。");

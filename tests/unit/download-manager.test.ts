@@ -234,4 +234,46 @@ describe("DownloadManager", () => {
     expect(cancel).toHaveBeenCalledWith(100);
     expect(await listDownloads()).toEqual([]);
   });
+
+  it("启动中的下载尚无浏览器 ID 时拒绝清空并保留记录", async () => {
+    await putDownload({
+      id: "download-starting",
+      candidateId: "file-starting",
+      url: "https://example.com/starting.pdf",
+      filename: "starting.pdf",
+      status: "starting",
+      createdAt: 1,
+      updatedAt: 1
+    });
+    const manager = new DownloadManager();
+
+    await expect(manager.clearAll()).rejects.toThrow("正在启动");
+    expect(await listDownloads()).toHaveLength(1);
+  });
+
+  it("活动下载取消失败时拒绝清空并保留记录", async () => {
+    await putFiles("session", [file("clear-failed")]);
+    const manager = new DownloadManager();
+    await manager.queue(["clear-failed"]);
+    await manager.action("start");
+    cancel.mockRejectedValueOnce(new Error("CANCEL_FAILED"));
+    search.mockResolvedValueOnce([
+      { id: 100, state: "in_progress" } as chrome.downloads.DownloadItem
+    ]);
+
+    await expect(manager.clearAll()).rejects.toThrow("CANCEL_FAILED");
+    expect(await listDownloads()).toHaveLength(1);
+  });
+
+  it("取消失败但浏览器任务已结束时仍可安全清空", async () => {
+    await putFiles("session", [file("clear-completed")]);
+    const manager = new DownloadManager();
+    await manager.queue(["clear-completed"]);
+    await manager.action("start");
+    cancel.mockRejectedValueOnce(new Error("ALREADY_FINISHED"));
+    search.mockResolvedValueOnce([{ id: 100, state: "complete" } as chrome.downloads.DownloadItem]);
+
+    await expect(manager.clearAll()).resolves.toBeUndefined();
+    expect(await listDownloads()).toEqual([]);
+  });
 });
