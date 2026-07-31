@@ -57,6 +57,15 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
+function canOpenResource(file: FileCandidate): boolean {
+  if (file.warnings.includes("temporary_blob")) return false;
+  try {
+    return ["http:", "https:"].includes(new URL(file.finalUrl ?? file.canonicalUrl).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export function ResultsPage({ snapshot, refresh }: Props) {
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
@@ -496,6 +505,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   </button>
                   <button
                     type="button"
+                    disabled={!canOpenResource(file)}
                     onClick={() =>
                       void runCardAction(
                         () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
@@ -506,7 +516,11 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   >
                     打开
                   </button>
-                  <button type="button" disabled={file.isExternal} onClick={() => void probe(file)}>
+                  <button
+                    type="button"
+                    disabled={file.isExternal || !canOpenResource(file)}
+                    onClick={() => void probe(file)}
+                  >
                     元数据
                   </button>
                 </div>

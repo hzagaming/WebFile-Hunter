@@ -295,7 +295,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.scanImages}
               onChange={(e) => setSettings({ ...settings, scanImages: e.target.checked })}
             />
-            显示图片
+            扫描图片资源
           </label>
           <label>
             <input
@@ -439,7 +439,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
       </div>
       <div className="settings-group">
         <h3>已授权网站</h3>
-        <p>权限只用于你主动启动的监听或递归任务，可随时撤销。</p>
+        <p>权限只用于你主动启动的扫描、监听或递归任务，可随时撤销。</p>
         <div className="permission-list">
           {origins.map((origin) => (
             <div key={origin}>

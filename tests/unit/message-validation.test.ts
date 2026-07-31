@@ -8,12 +8,16 @@ describe("extension message validation", () => {
     ).toBe(true);
     expect(validateExtensionRequest({ type: "CLEAR_HISTORY" }).success).toBe(true);
     expect(validateExtensionRequest({ type: "GET_DOWNLOADS" }).success).toBe(true);
+    expect(validateExtensionRequest({ type: "GET_SNAPSHOT", payload: { tabId: 9 } }).success).toBe(
+      true
+    );
   });
 
   it.each([
     { type: "FETCH_ARBITRARY_URL", payload: { url: "https://other.test/private" } },
     { type: "SCAN_CURRENT_PAGE", payload: {} },
     { type: "SCAN_CURRENT_PAGE", payload: { tabId: -1 } },
+    { type: "GET_SNAPSHOT", payload: { tabId: -1 } },
     { type: "STOP_SCAN", payload: { sessionId: "x", extra: true } },
     { type: "START_RECURSIVE_CRAWL", payload: { tabId: 1, config: { maxDepth: 99 } } }
   ])("拒绝未知、缺字段或越界消息", (message) => {

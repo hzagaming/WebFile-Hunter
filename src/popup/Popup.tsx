@@ -43,15 +43,16 @@ export function Popup() {
     setError(undefined);
     openPanel();
     try {
+      if (
+        !(await chrome.permissions.request({
+          origins: [`${page.protocol}//${page.hostname}/*`]
+        }))
+      ) {
+        throw new Error("未授予当前网站权限。");
+      }
       if (mode === "monitor") {
         const parsed = page;
         const origin = parsed.origin;
-        if (
-          !(await chrome.permissions.request({
-            origins: [`${parsed.protocol}//${parsed.hostname}/*`]
-          }))
-        )
-          throw new Error("未授予当前网站权限。");
         await sendMessage<ScanSession>({
           type: "START_LIVE_MONITOR",
           payload: { tabId: tab.id, origin }

@@ -4,12 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ScannerPage } from "@/sidepanel/pages/ScannerPage";
 import { appSnapshot, scanSession } from "../helpers/fixtures";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  requestPermission: vi.fn(),
+  sendMessage: vi.fn()
+}));
 
 vi.mock("@/messaging/message-client", () => ({ sendMessage: mocks.sendMessage }));
 
 beforeEach(() => {
   mocks.sendMessage.mockReset().mockResolvedValue(undefined);
+  mocks.requestPermission.mockReset().mockResolvedValue(true);
+  vi.stubGlobal("chrome", {
+    permissions: { request: mocks.requestPermission }
+  });
   vi.stubGlobal(
     "confirm",
     vi.fn(() => true)
@@ -48,6 +55,62 @@ describe("ScannerPage", () => {
       />
     );
     expect(screen.getByText(/180 秒/)).toBeInTheDocument();
+  });
+
+  it("从侧栏扫描当前页时先请求当前站点权限", async () => {
+    const user = userEvent.setup();
+    const created = scanSession({ id: "created-session", status: "running" });
+    mocks.sendMessage.mockResolvedValue(created);
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://media.example.test/watch",
+            title: "Media",
+            origin: "https://media.example.test"
+          }
+        })}
+        refresh={refresh}
+        openResults={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /扫描当前页面/ }));
+
+    expect(mocks.requestPermission).toHaveBeenCalledWith({
+      origins: ["https://media.example.test/*"]
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: "SCAN_CURRENT_PAGE",
+      payload: { tabId: 9 }
+    });
+    expect(refresh).toHaveBeenCalledWith("created-session");
+  });
+
+  it("控制请求进行中时禁用任务按钮以阻止重复操作", async () => {
+    const user = userEvent.setup();
+    let resolveRequest: (() => void) | undefined;
+    mocks.sendMessage.mockImplementation(
+      () =>
+        new Promise<void>((resolvePromise) => {
+          resolveRequest = resolvePromise;
+        })
+    );
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeSession: scanSession({ mode: "recursive_crawl", status: "running" })
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "暂停" }));
+    expect(screen.getByRole("button", { name: "暂停" })).toBeDisabled();
+    resolveRequest?.();
   });
 
   it("停止进行中任务前确认", async () => {

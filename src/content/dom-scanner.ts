@@ -4,6 +4,10 @@ import type { PageCandidate, PageScanResult, RawResource } from "@/types/scanner
 import { extractCssUrls, scanAccessibleStylesheets } from "./style-url-scanner";
 import { scanPerformanceEntries } from "./performance-scanner";
 
+const MAX_ITEMS = 20_000;
+const MAX_TITLE_LENGTH = 2048;
+const MAX_URL_LENGTH = 16_384;
+
 const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["a", ["href"]],
   ["audio", ["src"]],
@@ -44,8 +48,9 @@ function splitSrcset(value: string): string[] {
 function normalize(raw: string): string | undefined {
   try {
     const parsed = new URL(raw, document.baseURI);
-    if (parsed.protocol === "blob:") return parsed.href;
-    return normalizeUrl(raw, document.baseURI).canonicalUrl;
+    const url =
+      parsed.protocol === "blob:" ? parsed.href : normalizeUrl(raw, document.baseURI).canonicalUrl;
+    return url.length <= MAX_URL_LENGTH ? url : undefined;
   } catch {
     return undefined;
   }
@@ -68,6 +73,7 @@ export function scanDocument(
     attribute: string | undefined,
     source: RawResource["source"]
   ): void => {
+    if (resources.size >= MAX_ITEMS) return;
     const url = normalize(raw);
     if (!url || resources.has(url)) return;
     const mimeType = element?.getAttribute("type") ?? undefined;
@@ -98,7 +104,7 @@ export function scanDocument(
             element instanceof HTMLAnchorElement && element.hasAttribute("download");
           if (!pageElement || looksLikeFileUrl(url) || downloadable) {
             addResource(value, element, attribute, "DOM_ATTRIBUTE");
-          } else if (!pages.has(url)) {
+          } else if (pages.size < MAX_ITEMS && !pages.has(url)) {
             pages.set(url, {
               url,
               tagName: element.tagName.toLowerCase(),
@@ -132,7 +138,7 @@ export function scanDocument(
 
   return {
     pageUrl: location.href,
-    title: document.title,
+    title: document.title.slice(0, MAX_TITLE_LENGTH),
     resources: [...resources.values()],
     pages: [...pages.values()]
   };

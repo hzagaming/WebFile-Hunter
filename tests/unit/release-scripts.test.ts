@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -39,6 +39,18 @@ afterEach(async () => {
 });
 
 describe("release scripts", () => {
+  it("正式 manifest 可识别任意普通网页但仍按站点申请内容权限", async () => {
+    const manifest = JSON.parse(await readFile(resolve("manifest.json"), "utf8")) as {
+      permissions?: string[];
+      host_permissions?: string[];
+      optional_host_permissions?: string[];
+    };
+
+    expect(manifest.permissions).toContain("tabs");
+    expect(manifest.host_permissions).toBeUndefined();
+    expect(manifest.optional_host_permissions).toEqual(["http://*/*", "https://*/*"]);
+  });
+
   it("拒绝发布包中的 TODO/FIXME 标记", async () => {
     const root = await releaseFixture();
     await writeFile(join(root, "asset.js"), "const unfinished = 'FIXME';\n");

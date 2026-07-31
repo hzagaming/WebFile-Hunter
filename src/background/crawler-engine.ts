@@ -1,4 +1,4 @@
-import { createFileCandidate } from "@/core/candidate-factory";
+import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { extractLinksFromHtml } from "@/core/html-link-extractor";
 import { isHtmlMime } from "@/core/mime-map";
 import { inspectUrlSafety } from "@/core/url-security";
@@ -127,31 +127,28 @@ async function recordCandidates(
       }
     }
     try {
-      candidates.push(
-        createFileCandidate({
-          url: resource.url,
-          source: "CRAWLED_PAGE",
-          sourcePageUrl: pageUrl,
-          sourcePageTitle: pageTitle,
-          parentUrl: pageUrl,
-          ...(resource.tagName ? { tagName: resource.tagName } : {}),
-          ...(resource.hasDownload ? { hasDownload: true } : {}),
-          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
-          ...(metadata?.finalUrl ? { finalUrl: metadata.finalUrl } : {}),
-          ...(metadata?.mimeType ? { mimeType: metadata.mimeType } : {}),
-          ...(metadata?.contentLength !== undefined
-            ? { contentLength: metadata.contentLength }
-            : {}),
-          ...(metadata?.contentDisposition
-            ? { contentDisposition: metadata.contentDisposition }
-            : {}),
-          ...(metadata?.etag ? { etag: metadata.etag } : {}),
-          ...(metadata?.lastModified ? { lastModified: metadata.lastModified } : {}),
-          ...(metadata?.acceptRanges ? { acceptRanges: metadata.acceptRanges } : {}),
-          customExtensions: settings.customExtensions,
-          customMimeTypes: settings.customMimeTypes
-        })
-      );
+      const candidate = createFileCandidate({
+        url: resource.url,
+        source: "CRAWLED_PAGE",
+        sourcePageUrl: pageUrl,
+        sourcePageTitle: pageTitle,
+        parentUrl: pageUrl,
+        ...(resource.tagName ? { tagName: resource.tagName } : {}),
+        ...(resource.hasDownload ? { hasDownload: true } : {}),
+        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+        ...(metadata?.finalUrl ? { finalUrl: metadata.finalUrl } : {}),
+        ...(metadata?.mimeType ? { mimeType: metadata.mimeType } : {}),
+        ...(metadata?.contentLength !== undefined ? { contentLength: metadata.contentLength } : {}),
+        ...(metadata?.contentDisposition
+          ? { contentDisposition: metadata.contentDisposition }
+          : {}),
+        ...(metadata?.etag ? { etag: metadata.etag } : {}),
+        ...(metadata?.lastModified ? { lastModified: metadata.lastModified } : {}),
+        ...(metadata?.acceptRanges ? { acceptRanges: metadata.acceptRanges } : {}),
+        customExtensions: settings.customExtensions,
+        customMimeTypes: settings.customMimeTypes
+      });
+      if (shouldIncludeCandidate(candidate, settings)) candidates.push(candidate);
     } catch {
       // URL 已在统一校验层被拒绝。
     }
@@ -183,6 +180,7 @@ async function processPage(
     active.controller.signal
   );
   if (!isHtmlMime(metadata.mimeType)) {
+    const settings = await getSettings();
     const candidate = createFileCandidate({
       url: item.url,
       finalUrl: metadata.finalUrl,
@@ -191,8 +189,11 @@ async function processPage(
       parentUrl: item.parentUrl ?? session.startUrl,
       ...(metadata.mimeType ? { mimeType: metadata.mimeType } : {}),
       ...(metadata.contentLength !== undefined ? { contentLength: metadata.contentLength } : {}),
-      ...(metadata.contentDisposition ? { contentDisposition: metadata.contentDisposition } : {})
+      ...(metadata.contentDisposition ? { contentDisposition: metadata.contentDisposition } : {}),
+      customExtensions: settings.customExtensions,
+      customMimeTypes: settings.customMimeTypes
     });
+    if (!shouldIncludeCandidate(candidate, settings)) return;
     const stored = await putFiles(session.id, [candidate]);
     broadcast({ type: "FILES_DISCOVERED", payload: { sessionId: session.id, files: stored } });
     return;

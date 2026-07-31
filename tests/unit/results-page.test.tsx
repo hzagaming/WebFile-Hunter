@@ -157,6 +157,8 @@ describe("ResultsPage", () => {
 
     expect(screen.getByText("临时浏览器资源，不能直接下载")).toBeInTheDocument();
     expect(screen.getByText("可能资源，请人工确认")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "元数据" })).toBeDisabled();
   });
 
   it("单项复制失败时显示明确错误反馈", async () => {

@@ -119,7 +119,10 @@ export const extensionRequestSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("GET_SNAPSHOT"),
-      payload: z.object({ sessionId: sessionId.optional() }).strict().optional()
+      payload: z
+        .object({ sessionId: sessionId.optional(), tabId: tabId.optional() })
+        .strict()
+        .optional()
     })
     .strict(),
   z.object({ type: z.literal("GET_DOWNLOADS") }).strict(),

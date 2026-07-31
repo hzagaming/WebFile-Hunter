@@ -44,6 +44,11 @@ async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   return (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
 }
 
+async function getSnapshotTab(tabId?: number): Promise<chrome.tabs.Tab | undefined> {
+  if (tabId === undefined) return getActiveTab();
+  return chrome.tabs.get(tabId).catch(() => undefined);
+}
+
 export function selectSnapshotSession(
   sessions: readonly ScanSession[],
   activeTab: AppSnapshot["activeTab"],
@@ -61,8 +66,12 @@ export function selectSnapshotSession(
   );
 }
 
-async function snapshot(downloads: DownloadManager, sessionId?: string): Promise<AppSnapshot> {
-  const tab = await getActiveTab();
+async function snapshot(
+  downloads: DownloadManager,
+  sessionId?: string,
+  tabId?: number
+): Promise<AppSnapshot> {
+  const tab = await getSnapshotTab(tabId);
   const sessions = await listSessions();
   let activeTab: AppSnapshot["activeTab"];
   if (tab?.id !== undefined && tab.url) {
@@ -118,7 +127,7 @@ export class MessageRouter {
       case "GET_ACTIVE_CONTEXT":
         return getActiveTab();
       case "GET_SNAPSHOT":
-        return snapshot(this.#downloads, message.payload?.sessionId);
+        return snapshot(this.#downloads, message.payload?.sessionId, message.payload?.tabId);
       case "GET_DOWNLOADS":
         return this.#downloads.getSnapshot();
       case "SCAN_CURRENT_PAGE": {

@@ -66,13 +66,13 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid rgba(17, 124, 166, 0.2);
-  outline-offset: 1px;
+  outline: 3px solid var(--primary-dark);
+  outline-offset: 2px;
 }
 .virtual-list:focus-visible,
 summary:focus-visible {
-  outline: 3px solid rgba(17, 124, 166, 0.2);
-  outline-offset: 1px;
+  outline: 3px solid var(--primary-dark);
+  outline-offset: 2px;
 }
 button:disabled {
   opacity: 0.48;
@@ -851,6 +851,7 @@ h3 {
   *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
   button:hover:not(:disabled),

@@ -5,6 +5,7 @@ import { appSnapshot, scanSession } from "../helpers/fixtures";
 import type { AppSnapshot, ExtensionEvent } from "@/messaging/message-types";
 
 const mocks = vi.hoisted(() => ({
+  queryTabs: vi.fn(),
   sendMessage: vi.fn(),
   subscribeEvents: vi.fn<(listener: (event: ExtensionEvent) => void) => () => void>(() => vi.fn())
 }));
@@ -23,8 +24,10 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  mocks.queryTabs.mockReset().mockResolvedValue([{ id: 17 }]);
   mocks.sendMessage.mockReset();
   mocks.subscribeEvents.mockReset().mockReturnValue(vi.fn());
+  vi.stubGlobal("chrome", { tabs: { query: mocks.queryTabs } });
 });
 
 describe("useAppSnapshot", () => {
@@ -77,7 +80,25 @@ describe("useAppSnapshot", () => {
     act(() => listener?.({ type: "ACTIVE_CONTEXT_CHANGED" }));
 
     await waitFor(() => expect(result.current.snapshot).toBe(second));
-    expect(mocks.sendMessage).toHaveBeenLastCalledWith({ type: "GET_SNAPSHOT" });
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith({
+      type: "GET_SNAPSHOT",
+      payload: { tabId: 17 }
+    });
+  });
+
+  it("每个侧栏使用自身窗口的活动标签页生成快照", async () => {
+    mocks.queryTabs.mockResolvedValue([{ id: 29 }]);
+    mocks.sendMessage.mockResolvedValue(appSnapshot());
+
+    renderHook(() => useAppSnapshot());
+
+    await waitFor(() =>
+      expect(mocks.sendMessage).toHaveBeenCalledWith({
+        type: "GET_SNAPSHOT",
+        payload: { tabId: 29 }
+      })
+    );
+    expect(mocks.queryTabs).toHaveBeenCalledWith({ active: true, currentWindow: true });
   });
 
   it("其他标签页的任务事件不会成为当前标签页活动任务", async () => {

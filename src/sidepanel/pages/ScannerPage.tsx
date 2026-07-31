@@ -47,7 +47,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
     setWorking(mode);
     setLocalError(undefined);
     try {
-      if (mode !== "current" && !(await requestSitePermission(tab.url))) {
+      if (!(await requestSitePermission(tab.url))) {
         throw new Error("未授予当前网站权限，任务没有启动。插件不会重复弹出授权窗口。");
       }
       const created =
@@ -104,7 +104,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         {session ? <StatusBadge status={session.status} /> : null}
       </div>
       <p className="section-copy">
-        所有结果只保存在本地。扫描不会自动下载、提交表单或进入外域页面。
+        首次扫描站点时会请求访问权限。结果只保存在本地，不会自动下载、提交表单或进入外域页面。
       </p>
       {localError ? (
         <div className="notice notice-error" role="alert">
@@ -326,22 +326,40 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           ) : null}
           <div className="button-row">
             {session.status === "running" && session.mode === "recursive_crawl" ? (
-              <button type="button" onClick={() => void control("pause")}>
+              <button
+                type="button"
+                disabled={Boolean(working)}
+                onClick={() => void control("pause")}
+              >
                 暂停
               </button>
             ) : null}
             {session.status === "paused" ? (
-              <button type="button" onClick={() => void control("resume")}>
+              <button
+                type="button"
+                disabled={Boolean(working)}
+                onClick={() => void control("resume")}
+              >
                 继续
               </button>
             ) : null}
             {session.status === "running" || session.status === "paused" ? (
-              <button className="danger" type="button" onClick={() => void control("stop")}>
+              <button
+                className="danger"
+                type="button"
+                disabled={Boolean(working)}
+                onClick={() => void control("stop")}
+              >
                 停止任务
               </button>
             ) : null}
             {session.filesDiscovered > 0 ? (
-              <button className="primary" type="button" onClick={openResults}>
+              <button
+                className="primary"
+                type="button"
+                disabled={Boolean(working)}
+                onClick={openResults}
+              >
                 查看结果
               </button>
             ) : null}

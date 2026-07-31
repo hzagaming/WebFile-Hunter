@@ -1,4 +1,4 @@
-import { createFileCandidate } from "@/core/candidate-factory";
+import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
 import { categoryFromMime, isHtmlMime, normalizeMimeType } from "@/core/mime-map";
 import { getSession, listFiles, putFiles } from "@/database/db";
@@ -158,6 +158,7 @@ export class NetworkMonitor {
     } catch {
       return;
     }
+    if (!shouldIncludeCandidate(candidate, settings)) return;
     const [stored] = await putFiles(sessionId, [candidate]);
     if (!stored) return;
     broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: [stored] } });

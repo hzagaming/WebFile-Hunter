@@ -15,7 +15,7 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 - 本地导出：TXT、CSV（可带 UTF-8 BOM）、JSON。
 - 下载队列：用户手动开始、并发限制、取消、重试、打开文件、在文件夹中显示。
 - 本地历史与恢复：支持打开、单次导出、删除和清空扫描历史；清空时保留设置与下载记录。IndexedDB 检查点可供递归任务手动恢复。
-- 最小权限：主机权限按站点请求，设置页可逐项撤销。
+- 最小权限：只读取当前活动标签页上下文；页面内容权限按站点请求，设置页可逐项撤销。
 
 ## 技术栈
 
@@ -65,7 +65,7 @@ npm run test:e2e
 npm run package
 ```
 
-`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予本地测试站权限，生产 `dist/manifest.json` 仍使用可选主机权限。测试结束后删除临时浏览器配置。
+`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。测试会确认未授权普通网页仍可被侧栏识别且没有获得内容权限；临时副本只为后续功能链路预授予本地测试站权限，生产 `dist/manifest.json` 仍使用可选主机权限。测试结束后删除临时浏览器配置。
 
 脚本会自动探测 macOS、Windows 和 Linux 的常见 Edge 安装路径；非标准安装可设置 `EDGE_PATH`。
 
@@ -100,7 +100,7 @@ npm run build
 
 ### 扫描当前页面
 
-不申请永久主机权限。用户点击后，扩展通过 `activeTab` 和 `chrome.scripting` 扫描当前页面及浏览器允许访问的 frame，不会自动进入链接或下载文件。
+侧栏通过 `tabs` 识别所在窗口的当前网页，但这不会授予页面内容访问。用户点击后，扩展按当前站点请求可撤销的主机权限，再通过 `chrome.scripting` 扫描页面及浏览器允许访问的 frame；不会自动进入链接或下载文件。
 
 ### 实时资源监听
 
@@ -115,13 +115,14 @@ npm run build
 | 权限         | 用途                                     |
 | ------------ | ---------------------------------------- |
 | `activeTab`  | 仅在用户操作后读取当前网页上下文         |
+| `tabs`       | 识别每个侧栏所在窗口的当前标签页 URL     |
 | `scripting`  | 注入本地打包的页面扫描脚本               |
 | `storage`    | 保存设置、小型运行状态和界面偏好         |
 | `downloads`  | 执行用户明确选择并手动开始的下载任务     |
 | `webRequest` | 观察当前标签页资源请求，不阻断或修改请求 |
 | `sidePanel`  | 显示主界面                               |
 | `alarms`     | 自动结束监听并辅助后台生命周期           |
-| 可选主机权限 | 仅在用户启动监听或递归扫描时访问指定站点 |
+| 可选主机权限 | 仅在用户启动扫描任务时访问当前指定站点   |
 
 扩展不申请 cookies、history、debugger、proxy、nativeMessaging、webRequestBlocking 或 declarativeNetRequest。
 
@@ -153,7 +154,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v0.2.3.zip
+release/webfile-hunter-v1.0.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。
@@ -172,7 +173,7 @@ ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备�
 ## 故障排除
 
 - “仅支持 HTTP 或 HTTPS”：`edge://`、本地文件、扩展页和其他内部页面不能扫描。
-- “当前网站权限尚未授予”：回到扫描页重新点击监听/递归并确认该站点权限。
+- “当前网站权限尚未授予”：回到扫描页重新点击对应扫描模式并确认该站点权限。
 - “网站拒绝 HEAD”：仍可复制链接或打开来源页；扩展不会伪造凭据绕过限制。
 - 侧边栏没有刷新：点击页面右上角“刷新”，或重新打开侧边栏；结果仍保存在 IndexedDB。
 - 扩展更新后异常：在 `edge://extensions` 点击“重新加载”，再检查 Service Worker 控制台。

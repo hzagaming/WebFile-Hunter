@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFileCandidate } from "@/core/candidate-factory";
+import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 
 describe("createFileCandidate", () => {
   it("将同源 blob URL 保存为不可下载的临时资源", () => {
@@ -17,5 +17,16 @@ describe("createFileCandidate", () => {
       confidence: 40,
       warnings: ["temporary_blob"]
     });
+  });
+
+  it("图片开关统一作用于所有发现管线", () => {
+    const image = createFileCandidate({
+      url: "https://example.test/cover.jpg",
+      source: "NETWORK_REQUEST",
+      sourcePageUrl: "https://example.test/page"
+    });
+
+    expect(shouldIncludeCandidate(image, { scanImages: true })).toBe(true);
+    expect(shouldIncludeCandidate(image, { scanImages: false })).toBe(false);
   });
 });

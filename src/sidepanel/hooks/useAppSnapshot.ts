@@ -19,9 +19,14 @@ export function useAppSnapshot() {
     const generation = ++refreshGeneration.current;
     setLoading(true);
     try {
+      const tabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+      const payload = {
+        ...(sessionId ? { sessionId } : {}),
+        ...(tabId !== undefined ? { tabId } : {})
+      };
       const next = await sendMessage<AppSnapshot>({
         type: "GET_SNAPSHOT",
-        ...(sessionId ? { payload: { sessionId } } : {})
+        ...(Object.keys(payload).length ? { payload } : {})
       });
       if (generation !== refreshGeneration.current) return;
       setSnapshot(next);

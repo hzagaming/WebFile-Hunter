@@ -19,6 +19,7 @@ const testManifestPath = join(extensionDirectory, "manifest.json");
 const testManifest = JSON.parse(await readFile(testManifestPath, "utf8"));
 const server = await startTestServer();
 const recursiveOrigin = "http://wfh.test";
+const ungrantedOrigin = "http://ungranted.wfh.test";
 testManifest.host_permissions = ["http://127.0.0.1/*", `${recursiveOrigin}/*`];
 await writeFile(testManifestPath, JSON.stringify(testManifest));
 let context;
@@ -93,6 +94,38 @@ async function assertResponsive(page, label) {
     await page.setViewportSize({ width, height: 820 });
     await assertNoHorizontalOverflow(page, `${label}（${width}px）`);
     await assertAccessibleControls(page, `${label}（${width}px）`);
+  }
+}
+
+async function assertMotionAndFocusAccessibility(page) {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const values = await page.evaluate(() => {
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    document.body.append(spinner);
+    const spinnerStyle = getComputedStyle(spinner);
+    const button = [...document.querySelectorAll("button")].find(
+      (item) => !item.disabled && item.getBoundingClientRect().width > 0
+    );
+    button?.focus();
+    const buttonStyle = button ? getComputedStyle(button) : undefined;
+    const output = {
+      animationIterationCount: spinnerStyle.animationIterationCount,
+      outlineColor: buttonStyle?.outlineColor,
+      outlineWidth: buttonStyle?.outlineWidth
+    };
+    button?.blur();
+    spinner.remove();
+    return output;
+  });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const alpha = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(values.outlineColor ?? "")?.[1];
+  if (
+    values.animationIterationCount !== "1" ||
+    Number.parseFloat(values.outlineWidth ?? "0") < 2 ||
+    (alpha !== undefined && Number(alpha) < 0.8)
+  ) {
+    throw new Error(`动效或焦点无障碍检查失败：${JSON.stringify(values)}`);
   }
 }
 
@@ -311,7 +344,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--no-proxy-server",
-      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port}`
+      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port},MAP ungranted.wfh.test:80 127.0.0.1:${server.port}`
     ]
   });
   const worker =
@@ -328,6 +361,23 @@ try {
   await permissionPage.goto(`${extensionOrigin}/options/index.html`, {
     waitUntil: "domcontentloaded"
   });
+
+  const ungrantedPage = await context.newPage();
+  watchPage(ungrantedPage, "ungranted");
+  await ungrantedPage.goto(ungrantedOrigin, { waitUntil: "domcontentloaded" });
+  const hasUngrant = await permissionPage.evaluate(
+    (origin) => chrome.permissions.contains({ origins: [`${origin}/*`] }),
+    ungrantedOrigin
+  );
+  if (hasUngrant) throw new Error("未授权站点被意外授予了 Host 权限。");
+  const ungrantedSnapshot = await send(permissionPage, { type: "GET_SNAPSHOT" });
+  if (
+    ungrantedSnapshot.activeTab?.url !== ungrantedPage.url() ||
+    ungrantedSnapshot.activeTab?.origin !== ungrantedOrigin
+  ) {
+    throw new Error(`侧栏无法识别未授权普通网页：${JSON.stringify(ungrantedSnapshot.activeTab)}`);
+  }
+  await ungrantedPage.close();
 
   await fixturePage.bringToFront();
   const tabId = await worker.evaluate(
@@ -543,7 +593,19 @@ try {
   });
   await sidepanelPage.getByRole("heading", { name: "WebFile Hunter" }).waitFor();
   await sidepanelPage.getByRole("heading", { name: "开始扫描" }).waitFor();
+  const currentSite = sidepanelPage.locator(".app-header p");
+  await fixturePage.bringToFront();
+  await eventually(
+    () => currentSite.getAttribute("title"),
+    (title) => title === fixturePage.url()
+  );
+  for (const name of ["扫描当前页面", "开始实时监听", "同域递归扫描"]) {
+    if (await sidepanelPage.getByRole("button", { name: new RegExp(name) }).isDisabled()) {
+      throw new Error(`普通网页扫描入口被意外禁用：${name}`);
+    }
+  }
   await assertResponsive(sidepanelPage, "扫描页");
+  await assertMotionAndFocusAccessibility(sidepanelPage);
   await assertActiveNavigation(sidepanelPage, "扫描");
   await mkdir(resolve("test-results"), { recursive: true });
   await sidepanelPage.screenshot({
@@ -551,12 +613,6 @@ try {
     fullPage: true
   });
 
-  const currentSite = sidepanelPage.locator(".app-header p");
-  await fixturePage.bringToFront();
-  await eventually(
-    () => currentSite.getAttribute("title"),
-    (title) => title === fixturePage.url()
-  );
   await fixturePage.goto(server.origin, { waitUntil: "domcontentloaded" });
   await eventually(
     () => currentSite.getAttribute("title"),
@@ -746,6 +802,7 @@ try {
   if (browserErrors.length) throw new Error(`浏览器页面错误：\n${browserErrors.join("\n")}`);
 
   console.log(`Edge MV3 加载通过：${extensionOrigin}`);
+  console.log("侧栏独立打开时可识别未授权普通网页，内容访问仍保持按站点授权");
   console.log(`当前页扫描通过：${currentFiles.length} 个候选`);
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);

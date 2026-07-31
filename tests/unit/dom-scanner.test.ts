@@ -54,4 +54,21 @@ describe("scanDocument", () => {
       })
     );
   });
+
+  it("在发送前限制超长字段和超大资源批次", () => {
+    document.title = "长".repeat(3000);
+    document.body.innerHTML = `<a download href="https://example.test/${"x".repeat(17_000)}.txt">超长</a>`;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue(
+      Array.from(
+        { length: 20_005 },
+        (_, index) => ({ name: `${location.origin}/asset-${index}.txt` }) as PerformanceEntry
+      )
+    );
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.title).toHaveLength(2048);
+    expect(result.resources).toHaveLength(20_000);
+    expect(result.resources.some((item) => item.url.length > 16_384)).toBe(false);
+  });
 });

@@ -10,7 +10,7 @@ import type { PageScanResult } from "@/types/scanner";
 
 export type ExtensionRequest =
   | { type: "GET_ACTIVE_CONTEXT" }
-  | { type: "GET_SNAPSHOT"; payload?: { sessionId?: string } }
+  | { type: "GET_SNAPSHOT"; payload?: { sessionId?: string; tabId?: number } }
   | { type: "GET_DOWNLOADS" }
   | { type: "SCAN_CURRENT_PAGE"; payload: { tabId: number } }
   | { type: "START_LIVE_MONITOR"; payload: { tabId: number; origin: string } }

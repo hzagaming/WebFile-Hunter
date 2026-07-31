@@ -1,7 +1,7 @@
 import { classifyFile, type ClassificationInput } from "./file-classifier";
 import { normalizeUrl } from "./url-normalizer";
 import { createId } from "@/utils/id";
-import type { DiscoverySource, FileCandidate } from "@/types/models";
+import type { AppSettings, DiscoverySource, FileCandidate } from "@/types/models";
 import type { NormalizedUrl } from "./url-normalizer";
 
 export interface CandidateInput extends Omit<ClassificationInput, "url"> {
@@ -63,4 +63,11 @@ export function createFileCandidate(input: CandidateInput): FileCandidate {
     metadataStatus: input.mimeType ? "complete" : "not_requested",
     warnings: [...new Set([...normalized.warnings, ...classified.warnings])]
   };
+}
+
+export function shouldIncludeCandidate(
+  candidate: FileCandidate,
+  settings: Pick<AppSettings, "scanImages">
+): boolean {
+  return settings.scanImages || candidate.category !== "image";
 }

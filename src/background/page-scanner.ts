@@ -1,4 +1,4 @@
-import { createFileCandidate } from "@/core/candidate-factory";
+import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
 import { putFiles, getSession, listFiles } from "@/database/db";
 import { getSettings } from "@/database/settings";
@@ -87,20 +87,19 @@ export async function handlePageScanResult(
   const settings = await getSettings();
   const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
     try {
-      return [
-        createFileCandidate({
-          url: resource.url,
-          source: resource.source,
-          sourcePageUrl: result.pageUrl,
-          sourcePageTitle: result.title,
-          tabId: session.tabId,
-          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
-          ...(resource.tagName ? { tagName: resource.tagName } : {}),
-          ...(resource.hasDownload ? { hasDownload: true } : {}),
-          customExtensions: settings.customExtensions,
-          customMimeTypes: settings.customMimeTypes
-        })
-      ];
+      const candidate = createFileCandidate({
+        url: resource.url,
+        source: resource.source,
+        sourcePageUrl: result.pageUrl,
+        sourcePageTitle: result.title,
+        tabId: session.tabId,
+        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+        ...(resource.tagName ? { tagName: resource.tagName } : {}),
+        ...(resource.hasDownload ? { hasDownload: true } : {}),
+        customExtensions: settings.customExtensions,
+        customMimeTypes: settings.customMimeTypes
+      });
+      return shouldIncludeCandidate(candidate, settings) ? [candidate] : [];
     } catch {
       return [];
     }

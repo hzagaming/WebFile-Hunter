@@ -54,7 +54,11 @@ beforeEach(() => {
       startUrl: "https://example.test/page"
     })
   );
-  mocks.getSettings.mockResolvedValue({ customExtensions: {}, customMimeTypes: {} });
+  mocks.getSettings.mockResolvedValue({
+    customExtensions: {},
+    customMimeTypes: {},
+    scanImages: true
+  });
   mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
   mocks.listFiles.mockResolvedValue([]);
   mocks.patchSession.mockResolvedValue(undefined);
@@ -101,5 +105,22 @@ describe("NetworkMonitor", () => {
     await vi.waitFor(() => expect(mocks.putFiles).toHaveBeenCalledTimes(2));
     expect(mocks.putFiles.mock.calls[0]?.[1][0]?.sourcePageUrl).toBe("https://example.test");
     expect(mocks.putFiles.mock.calls[1]?.[1][0]?.sourcePageUrl).toBe("https://example.test/page");
+  });
+
+  it("关闭图片扫描后不保存网络图片候选", async () => {
+    mocks.getSettings.mockResolvedValue({
+      customExtensions: {},
+      customMimeTypes: {},
+      scanImages: false
+    });
+
+    beforeRequest?.({
+      ...request("https://example.test"),
+      url: "https://cdn.test/cover.jpg"
+    });
+
+    await vi.waitFor(() => expect(mocks.getSettings).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(mocks.putFiles).not.toHaveBeenCalled();
   });
 });
