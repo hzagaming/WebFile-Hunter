@@ -14,8 +14,11 @@ interface Props {
   refresh: (sessionId?: string) => Promise<void>;
 }
 
-const categoryLabels: Record<FileCategory | "all", string> = {
+type CategoryFilter = FileCategory | "all" | "possible";
+
+const categoryLabels: Record<CategoryFilter, string> = {
   all: "全部",
+  possible: "可能资源",
   audio: "音频",
   video: "视频",
   text: "文本",
@@ -55,7 +58,7 @@ function formatSize(bytes?: number): string {
 }
 
 export function ResultsPage({ snapshot, refresh }: Props) {
-  const [category, setCategory] = useState<FileCategory | "all">("all");
+  const [category, setCategory] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
   const [extension, setExtension] = useState("");
   const [mime, setMime] = useState("");
@@ -71,6 +74,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [busy, setBusy] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const session = snapshot.activeSession;
+  const possibleCount = snapshot.files.filter((file) => file.confidence < 50).length;
 
   useEffect(() => {
     const updateViewportHeight = (): void => setViewportHeight(window.innerHeight);
@@ -91,6 +95,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     const maxBytes = maxMb ? Number(maxMb) * 1024 ** 2 : Number.POSITIVE_INFINITY;
     const query = search.toLowerCase();
     const result = snapshot.files.filter((file) => {
+      const isPossible = file.confidence < 50;
       const matchesSearch =
         !search ||
         (matcher
@@ -98,7 +103,8 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           : `${file.filename}\n${file.canonicalUrl}`.toLowerCase().includes(query));
       return (
         matchesSearch &&
-        (category === "all" || file.category === category) &&
+        (category === "all" ||
+          (category === "possible" ? isPossible : file.category === category)) &&
         (!extension || file.extension?.includes(extension.toLowerCase())) &&
         (!mime || file.mimeType?.toLowerCase().includes(mime.toLowerCase())) &&
         (source === "all" || file.sources.includes(source as FileCandidate["source"])) &&
@@ -106,7 +112,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
         file.confidence >= minConfidence &&
         (file.contentLength ?? 0) >= minBytes &&
         (file.contentLength ?? Number.POSITIVE_INFINITY) <= maxBytes &&
-        (snapshot.settings.showLowConfidence || file.confidence >= 50)
+        (category === "possible" || snapshot.settings.showLowConfidence || !isPossible)
       );
     });
     return {
@@ -289,7 +295,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       </div>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
       <div className="category-scroll" aria-label="文件分类">
-        {(Object.keys(categoryLabels) as Array<FileCategory | "all">).map((item) => (
+        {(Object.keys(categoryLabels) as CategoryFilter[]).map((item) => (
           <button
             type="button"
             className={category === item ? "active" : ""}
@@ -298,6 +304,11 @@ export function ResultsPage({ snapshot, refresh }: Props) {
             onClick={() => setCategory(item)}
           >
             {categoryLabels[item]}
+            {item === "possible" ? (
+              <span className="filter-count" aria-hidden="true">
+                {possibleCount}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -444,6 +455,9 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                 </div>
                 <div className="badges">
                   <span>{file.sources.map((item) => sourceLabels[item]).join(" + ")}</span>
+                  {file.confidence < 50 ? (
+                    <span className="warning">可能资源，请人工确认</span>
+                  ) : null}
                   {file.isExternal ? (
                     <span className="warning">外部资源</span>
                   ) : (

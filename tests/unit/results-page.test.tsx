@@ -4,13 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ResultsPage } from "@/sidepanel/pages/ResultsPage";
 import { appSnapshot, fileCandidate, scanSession } from "../helpers/fixtures";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), writeText: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  openTab: vi.fn(),
+  sendMessage: vi.fn(),
+  writeText: vi.fn()
+}));
 
 vi.mock("@/messaging/message-client", () => ({ sendMessage: mocks.sendMessage }));
 vi.mock("@/export/save-export", () => ({ saveExport: vi.fn() }));
 
 beforeEach(() => {
   mocks.sendMessage.mockReset().mockResolvedValue([]);
+  mocks.openTab.mockReset().mockResolvedValue(undefined);
   mocks.writeText.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal(
     "confirm",
@@ -18,7 +23,7 @@ beforeEach(() => {
   );
   Object.defineProperty(globalThis, "chrome", {
     configurable: true,
-    value: { tabs: { create: vi.fn().mockResolvedValue(undefined) } }
+    value: { tabs: { create: mocks.openTab } }
   });
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -122,6 +127,38 @@ describe("ResultsPage", () => {
     expect(screen.queryByText("NETWORK_HEADER")).not.toBeInTheDocument();
   });
 
+  it("默认将低置信度临时资源放入独立的可能资源分类", async () => {
+    const user = userEvent.setup();
+    const session = scanSession({ filesDiscovered: 1 });
+    const blob = fileCandidate("blob-audio", {
+      originalUrl: "blob:https://example.test/temporary-audio",
+      canonicalUrl: "blob:https://example.test/temporary-audio",
+      filename: "临时浏览器资源",
+      category: "unknown",
+      confidence: 40,
+      isDownloadable: false,
+      warnings: ["temporary_blob"]
+    });
+    delete blob.extension;
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({
+          activeSession: session,
+          files: [blob]
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText("临时浏览器资源，不能直接下载")).not.toBeInTheDocument();
+    const possibleButton = screen.getByRole("button", { name: "可能资源" });
+    expect(possibleButton).toHaveTextContent("1");
+    await user.click(possibleButton);
+
+    expect(screen.getByText("临时浏览器资源，不能直接下载")).toBeInTheDocument();
+    expect(screen.getByText("可能资源，请人工确认")).toBeInTheDocument();
+  });
+
   it("单项复制失败时显示明确错误反馈", async () => {
     const user = userEvent.setup();
     Object.defineProperty(navigator, "clipboard", {
@@ -134,6 +171,16 @@ describe("ResultsPage", () => {
     await user.click(screen.getAllByRole("button", { name: "复制" })[0]!);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("剪贴板不可用");
+  });
+
+  it("单项打开操作只创建一个标签页", async () => {
+    const user = userEvent.setup();
+    const { text } = renderResults();
+
+    await user.click(screen.getAllByRole("button", { name: "打开" })[0]!);
+
+    await waitFor(() => expect(mocks.openTab).toHaveBeenCalledTimes(1));
+    expect(mocks.openTab).toHaveBeenCalledWith({ url: text.canonicalUrl });
   });
 
   it("窗口高度变化时同步调整虚拟结果列表高度", () => {

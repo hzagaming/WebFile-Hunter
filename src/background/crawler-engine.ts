@@ -17,11 +17,12 @@ import { broadcast } from "./broadcast";
 import { CrawlerQueue } from "./crawler-queue";
 import { persistCrawlerCheckpoint } from "./checkpoint-manager";
 import { probeUrlMetadata, readLimitedText, safeFetch } from "./metadata-probe";
+import type { SafeFetchOptions } from "./metadata-probe";
 import { OriginRateLimiter } from "./rate-limiter";
 import { hasOriginPermission } from "./permission-manager";
 import { parseRobotsTxt, type RobotsRules } from "./robots-parser";
 import { finishSession, patchSession } from "./session-manager";
-import type { CrawlQueueItem, ScanSession } from "@/types/models";
+import type { CrawlQueueItem, ScanProgress, ScanSession } from "@/types/models";
 
 interface ActiveCrawl {
   controller: AbortController;
@@ -29,10 +30,39 @@ interface ActiveCrawl {
   queue?: CrawlerQueue;
   visited?: Set<string>;
   inFlight: CrawlQueueItem[];
+  currentUrl?: string;
+  requestTimes: number[];
+  progress: ScanProgress;
 }
 
 const activeCrawls = new Map<string, ActiveCrawl>();
 const resumingCrawls = new Set<string>();
+
+function recentRequestCount(active: ActiveCrawl, now = Date.now()): number {
+  while (active.requestTimes[0] !== undefined && active.requestTimes[0] < now - 60_000) {
+    active.requestTimes.shift();
+  }
+  return active.requestTimes.length;
+}
+
+function crawlerFetchOptions(session: ScanSession, active: ActiveCrawl): SafeFetchOptions {
+  return {
+    origin: session.origin,
+    config: session.config,
+    signal: active.controller.signal,
+    onRequestStart: (url) => {
+      const now = Date.now();
+      active.currentUrl = url;
+      active.requestTimes.push(now);
+      active.progress = {
+        ...active.progress,
+        currentUrl: url,
+        requestsPerMinute: recentRequestCount(active, now)
+      };
+      broadcast({ type: "SCAN_PROGRESS", payload: active.progress });
+    }
+  };
+}
 
 async function failCrawler(sessionId: string, error: unknown, fallback: string): Promise<void> {
   await finishSession(sessionId, "failed");
@@ -48,11 +78,7 @@ async function loadRobots(session: ScanSession, active: ActiveCrawl): Promise<Ro
       safeFetch(
         `${session.origin}/robots.txt`,
         { method: "GET" },
-        {
-          origin: session.origin,
-          config: session.config,
-          signal: active.controller.signal
-        }
+        crawlerFetchOptions(session, active)
       ),
     active.controller.signal
   );
@@ -92,9 +118,7 @@ async function recordCandidates(
         metadata = await active.limiter.run(
           () =>
             probeUrlMetadata(resource.url, {
-              origin: session.origin,
-              config: session.config,
-              signal: active.controller.signal
+              ...crawlerFetchOptions(session, active)
             }),
           active.controller.signal
         );
@@ -154,9 +178,7 @@ async function processPage(
   const metadata = await active.limiter.run(
     () =>
       probeUrlMetadata(item.url, {
-        origin: session.origin,
-        config: session.config,
-        signal: active.controller.signal
+        ...crawlerFetchOptions(session, active)
       }),
     active.controller.signal
   );
@@ -177,16 +199,7 @@ async function processPage(
   }
 
   const response = await active.limiter.run(
-    () =>
-      safeFetch(
-        item.url,
-        { method: "GET" },
-        {
-          origin: session.origin,
-          config: session.config,
-          signal: active.controller.signal
-        }
-      ),
+    () => safeFetch(item.url, { method: "GET" }, crawlerFetchOptions(session, active)),
     active.controller.signal
   );
   if (!response.ok) {
@@ -224,7 +237,16 @@ async function run(
   const active: ActiveCrawl = {
     controller,
     limiter: new OriginRateLimiter(session.config.maxConcurrency, session.config.minDelayMs),
-    inFlight: []
+    inFlight: [],
+    requestTimes: [],
+    progress: {
+      sessionId: session.id,
+      status: session.status,
+      pagesQueued: session.pagesQueued,
+      pagesProcessed: session.pagesProcessed,
+      filesDiscovered: session.filesDiscovered,
+      errors: session.errors
+    }
   };
   activeCrawls.set(session.id, active);
   const queue =
@@ -275,15 +297,19 @@ async function run(
       active.inFlight = [];
       if (controller.signal.aborted) break;
       const fileCount = (await listFiles(session.id)).length;
-      await patchSession(session.id, {
+      const progressPatch = {
         pagesProcessed: processed,
         pagesQueued: processed + queue.size,
         filesDiscovered: fileCount,
         errors,
+        ...(active.currentUrl ? { currentUrl: active.currentUrl } : {}),
+        requestsPerMinute: recentRequestCount(active),
         ...(processed % 10 === 0 || Date.now() - lastCheckpoint >= 5000
           ? { lastCheckpointAt: Date.now() }
           : {})
-      });
+      };
+      active.progress = { ...active.progress, ...progressPatch };
+      await patchSession(session.id, progressPatch);
       if (processed % 10 === 0 || Date.now() - lastCheckpoint >= 5000) {
         const snapshot = queue.snapshot();
         await persistCrawlerCheckpoint(session.id, snapshot.items, visited);

@@ -104,4 +104,89 @@ describe("useAppSnapshot", () => {
     expect(result.current.snapshot?.sessions).toHaveLength(1);
     expect(result.current.snapshot?.activeSession).toBeUndefined();
   });
+
+  it("实时合并递归请求进度到活动会话和历史会话", async () => {
+    const session = scanSession({
+      id: "recursive-session",
+      mode: "recursive_crawl",
+      status: "running"
+    });
+    const current = appSnapshot({
+      activeSession: session,
+      sessions: [session],
+      incompleteSessions: [session]
+    });
+    mocks.sendMessage.mockResolvedValue(current);
+    const { result } = renderHook(() => useAppSnapshot());
+    await waitFor(() => expect(result.current.snapshot).toBe(current));
+
+    const listener = mocks.subscribeEvents.mock.calls[0]?.[0];
+    act(() =>
+      listener?.({
+        type: "SCAN_PROGRESS",
+        payload: {
+          sessionId: session.id,
+          status: "running",
+          pagesQueued: 3,
+          pagesProcessed: 1,
+          filesDiscovered: 4,
+          errors: 0,
+          currentUrl: "https://example.test/page-2",
+          requestsPerMinute: 5
+        }
+      })
+    );
+
+    expect(result.current.snapshot?.activeSession).toMatchObject({
+      currentUrl: "https://example.test/page-2",
+      requestsPerMinute: 5
+    });
+    expect(result.current.snapshot?.sessions[0]).toMatchObject({
+      currentUrl: "https://example.test/page-2",
+      requestsPerMinute: 5
+    });
+    expect(result.current.snapshot?.incompleteSessions).toHaveLength(1);
+
+    act(() =>
+      listener?.({
+        type: "SCAN_PROGRESS",
+        payload: {
+          sessionId: session.id,
+          status: "completed",
+          pagesQueued: 3,
+          pagesProcessed: 3,
+          filesDiscovered: 4,
+          errors: 0,
+          currentUrl: "https://example.test/page-3",
+          requestsPerMinute: 5
+        }
+      })
+    );
+
+    expect(result.current.snapshot?.incompleteSessions).toHaveLength(0);
+
+    act(() => {
+      listener?.({
+        type: "SCAN_PROGRESS",
+        payload: {
+          sessionId: session.id,
+          status: "running",
+          pagesQueued: 2,
+          pagesProcessed: 2,
+          filesDiscovered: 3,
+          errors: 0,
+          currentUrl: "https://example.test/stale",
+          requestsPerMinute: 4
+        }
+      });
+      listener?.({
+        type: "SESSION_UPDATED",
+        payload: { ...session, status: "running" }
+      });
+    });
+
+    expect(result.current.snapshot?.activeSession?.status).toBe("completed");
+    expect(result.current.snapshot?.sessions[0]?.status).toBe("completed");
+    expect(result.current.snapshot?.incompleteSessions).toHaveLength(0);
+  });
 });

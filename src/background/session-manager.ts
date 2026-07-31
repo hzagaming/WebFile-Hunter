@@ -120,7 +120,11 @@ export async function patchSession(
       pagesQueued: updated.pagesQueued,
       pagesProcessed: updated.pagesProcessed,
       filesDiscovered: updated.filesDiscovered,
-      errors: updated.errors
+      errors: updated.errors,
+      ...(updated.currentUrl ? { currentUrl: updated.currentUrl } : {}),
+      ...(updated.requestsPerMinute !== undefined
+        ? { requestsPerMinute: updated.requestsPerMinute }
+        : {})
     }
   });
   return updated;

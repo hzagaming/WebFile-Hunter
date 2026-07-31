@@ -284,6 +284,11 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           <p className="current-url" title={session.startUrl}>
             {session.startUrl}
           </p>
+          {session.currentUrl ? (
+            <p className="current-url" title={session.currentUrl}>
+              {session.status === "running" ? "正在处理" : "最后处理"}：{session.currentUrl}
+            </p>
+          ) : null}
           <div className="metrics">
             <div>
               <strong>{session.pagesProcessed}</strong>
@@ -312,6 +317,9 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                   : "递归扫描"}
             </span>
             <span>运行：{elapsed(session)}</span>
+            {session.requestsPerMinute !== undefined ? (
+              <span>请求速率：{session.requestsPerMinute} 次/分钟</span>
+            ) : null}
           </div>
           {session.errorMessage ? (
             <FeedbackNotice kind="error">{session.errorMessage}</FeedbackNotice>

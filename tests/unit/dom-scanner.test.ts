@@ -40,4 +40,18 @@ describe("scanDocument", () => {
     expect(result.resources.some((item) => item.url.endsWith("hidden.png"))).toBe(false);
     expect(result.resources.some((item) => item.url.endsWith("shown.txt"))).toBe(true);
   });
+
+  it("保留页面内 blob 临时媒体资源供安全标记", () => {
+    document.body.innerHTML = '<audio src="blob:http://localhost/temporary-audio"></audio>';
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.resources).toContainEqual(
+      expect.objectContaining({
+        url: "blob:http://localhost/temporary-audio",
+        tagName: "audio"
+      })
+    );
+  });
 });

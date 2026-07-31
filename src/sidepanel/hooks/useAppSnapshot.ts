@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sendMessage, subscribeEvents } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
-import type { AppSettings, DownloadTask } from "@/types/models";
+import type { AppSettings, DownloadTask, ScanStatus } from "@/types/models";
+
+const TERMINAL_SCAN_STATUSES: readonly ScanStatus[] = ["completed", "cancelled", "failed"];
+
+function isTerminalStatus(status: ScanStatus): boolean {
+  return TERMINAL_SCAN_STATUSES.includes(status);
+}
 
 export function useAppSnapshot() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>();
@@ -50,7 +56,39 @@ export function useAppSnapshot() {
       setSnapshot((current) => {
         if (!current) return current;
         if (event.type === "DOWNLOADS_UPDATED") return { ...current, downloads: event.payload };
+        if (event.type === "SCAN_PROGRESS") {
+          const { sessionId, ...progress } = event.payload;
+          const mergeProgress = (session: (typeof current.sessions)[number]) =>
+            session.id !== sessionId ||
+            (isTerminalStatus(session.status) && !isTerminalStatus(progress.status))
+              ? session
+              : { ...session, ...progress };
+          return {
+            ...current,
+            sessions: current.sessions.map(mergeProgress),
+            incompleteSessions: current.incompleteSessions
+              .map(mergeProgress)
+              .filter(
+                (session) =>
+                  session.mode === "recursive_crawl" &&
+                  ["running", "paused"].includes(session.status)
+              ),
+            ...(current.activeSession?.id === sessionId
+              ? { activeSession: mergeProgress(current.activeSession) }
+              : {})
+          };
+        }
         if (event.type === "SESSION_UPDATED") {
+          const knownSession =
+            current.sessions.find((session) => session.id === event.payload.id) ??
+            (current.activeSession?.id === event.payload.id ? current.activeSession : undefined);
+          if (
+            knownSession &&
+            isTerminalStatus(knownSession.status) &&
+            !isTerminalStatus(event.payload.status)
+          ) {
+            return current;
+          }
           const sessions = current.sessions.some((session) => session.id === event.payload.id)
             ? current.sessions.map((session) =>
                 session.id === event.payload.id ? event.payload : session
@@ -60,9 +98,20 @@ export function useAppSnapshot() {
             !current.activeSession &&
             current.activeTab?.id === event.payload.tabId &&
             current.activeTab.origin === event.payload.origin;
+          const remainsIncomplete =
+            event.payload.mode === "recursive_crawl" &&
+            ["running", "paused"].includes(event.payload.status);
+          const incompleteSessions = remainsIncomplete
+            ? current.incompleteSessions.some((session) => session.id === event.payload.id)
+              ? current.incompleteSessions.map((session) =>
+                  session.id === event.payload.id ? event.payload : session
+                )
+              : [event.payload, ...current.incompleteSessions]
+            : current.incompleteSessions.filter((session) => session.id !== event.payload.id);
           return {
             ...current,
             sessions,
+            incompleteSessions,
             ...(current.activeSession?.id === event.payload.id || belongsToActiveContext
               ? { activeSession: event.payload }
               : {})

@@ -20,6 +20,7 @@ export interface SafeFetchOptions {
   origin: string;
   config: ScanConfig;
   signal: AbortSignal;
+  onRequestStart?: (url: string) => void;
 }
 
 function combineSignals(
@@ -66,6 +67,7 @@ export async function safeFetch(
     const timed = combineSignals(options.signal, options.config.requestTimeoutMs);
     let response: Response;
     try {
+      options.onRequestStart?.(currentUrl);
       response = await fetch(currentUrl, {
         ...init,
         method: init.method === "HEAD" ? "HEAD" : "GET",

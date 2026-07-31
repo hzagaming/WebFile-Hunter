@@ -69,6 +69,33 @@ describe("metadata probe", () => {
     ).rejects.toThrow("不属于当前授权站点");
   });
 
+  it("报告每一次真实网络请求用于递归进度统计", async () => {
+    const onRequestStart = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          new Response(null, { status: 302, headers: { Location: "/final.pdf" } })
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    );
+
+    await safeFetch(
+      "https://example.com/start",
+      { method: "HEAD" },
+      {
+        origin: "https://example.com",
+        config: DEFAULT_SCAN_CONFIG,
+        signal: new AbortController().signal,
+        onRequestStart
+      }
+    );
+
+    expect(onRequestStart).toHaveBeenNthCalledWith(1, "https://example.com/start");
+    expect(onRequestStart).toHaveBeenNthCalledWith(2, "https://example.com/final.pdf");
+  });
+
   it("网络重试退避期间可立即取消", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new TypeError("offline")));
     const controller = new AbortController();

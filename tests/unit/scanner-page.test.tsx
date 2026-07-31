@@ -65,4 +65,24 @@ describe("ScannerPage", () => {
     expect(confirm).toHaveBeenCalled();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
+
+  it("递归任务显示当前处理 URL 和真实请求速率", () => {
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeSession: scanSession({
+            mode: "recursive_crawl",
+            status: "running",
+            currentUrl: "https://example.test/page-2",
+            requestsPerMinute: 7
+          })
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("正在处理：https://example.test/page-2")).toBeInTheDocument();
+    expect(screen.getByText("请求速率：7 次/分钟")).toBeInTheDocument();
+  });
 });

@@ -2,6 +2,7 @@ import { classifyFile, type ClassificationInput } from "./file-classifier";
 import { normalizeUrl } from "./url-normalizer";
 import { createId } from "@/utils/id";
 import type { DiscoverySource, FileCandidate } from "@/types/models";
+import type { NormalizedUrl } from "./url-normalizer";
 
 export interface CandidateInput extends Omit<ClassificationInput, "url"> {
   url: string;
@@ -18,8 +19,16 @@ export interface CandidateInput extends Omit<ClassificationInput, "url"> {
   acceptRanges?: string;
 }
 
+function normalizeCandidateUrl(raw: string, baseUrl?: string): NormalizedUrl {
+  const originalUrl = raw.trim();
+  const parsed = baseUrl === undefined ? new URL(originalUrl) : new URL(originalUrl, baseUrl);
+  if (parsed.protocol !== "blob:") return normalizeUrl(originalUrl, baseUrl);
+  parsed.hash = "";
+  return { originalUrl, canonicalUrl: parsed.href, warnings: [] };
+}
+
 export function createFileCandidate(input: CandidateInput): FileCandidate {
-  const normalized = normalizeUrl(input.url, input.sourcePageUrl);
+  const normalized = normalizeCandidateUrl(input.url, input.sourcePageUrl);
   const classified = classifyFile(input);
   const now = Date.now();
   const sourceOrigin = new URL(input.sourcePageUrl).origin;
@@ -28,7 +37,7 @@ export function createFileCandidate(input: CandidateInput): FileCandidate {
     id: createId("file"),
     originalUrl: normalized.originalUrl,
     canonicalUrl: normalized.canonicalUrl,
-    ...(input.finalUrl ? { finalUrl: normalizeUrl(input.finalUrl).canonicalUrl } : {}),
+    ...(input.finalUrl ? { finalUrl: normalizeCandidateUrl(input.finalUrl).canonicalUrl } : {}),
     filename: classified.filename,
     ...(classified.extension ? { extension: classified.extension } : {}),
     category: classified.category,

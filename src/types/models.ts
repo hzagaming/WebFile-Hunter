@@ -89,6 +89,8 @@ export interface ScanSession {
   config: ScanConfig;
   lastCheckpointAt?: number;
   errorMessage?: string;
+  currentUrl?: string;
+  requestsPerMinute?: number;
 }
 
 export interface CrawlQueueItem {

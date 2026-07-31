@@ -43,6 +43,8 @@ function splitSrcset(value: string): string[] {
 
 function normalize(raw: string): string | undefined {
   try {
+    const parsed = new URL(raw, document.baseURI);
+    if (parsed.protocol === "blob:") return parsed.href;
     return normalizeUrl(raw, document.baseURI).canonicalUrl;
   } catch {
     return undefined;

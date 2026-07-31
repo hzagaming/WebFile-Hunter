@@ -98,6 +98,7 @@ export async function startTestServer() {
   if (!address || typeof address === "string") throw new Error("测试服务器启动失败。");
   return {
     origin: `http://127.0.0.1:${address.port}`,
+    port: address.port,
     close: () =>
       new Promise((resolvePromise, reject) =>
         server.close((error) => (error ? reject(error) : resolvePromise()))
