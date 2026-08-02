@@ -518,7 +518,9 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   </button>
                   <button
                     type="button"
-                    disabled={file.isExternal || !canOpenResource(file)}
+                    disabled={
+                      (file.isExternal && !snapshot.allSitesAccess) || !canOpenResource(file)
+                    }
                     onClick={() => void probe(file)}
                   >
                     元数据

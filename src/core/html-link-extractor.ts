@@ -1,5 +1,6 @@
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { looksLikeFileUrl } from "./file-classifier";
+import { linkTargetKind, metaResourceKind } from "./html-resource-policy";
 import { normalizeUrl, sameOrigin } from "./url-normalizer";
 import type { RawResource } from "@/types/scanner";
 import type { ExtractedHtmlLinks, PageCandidate } from "@/types/scanner";
@@ -9,13 +10,13 @@ type Element = DefaultTreeAdapterMap["element"];
 
 const RESOURCE_ATTRIBUTES: Record<string, readonly string[]> = {
   audio: ["src"],
-  video: ["src"],
+  video: ["src", "poster"],
   source: ["src", "srcset"],
   track: ["src"],
   embed: ["src"],
   object: ["data"],
   img: ["src", "srcset", "data-src", "data-original", "lazy-src"],
-  link: ["href"],
+  image: ["href", "xlink:href"],
   script: ["src"],
   input: ["src"]
 };
@@ -28,6 +29,7 @@ const DATA_ATTRIBUTES = [
   "data-file",
   "data-audio",
   "data-video",
+  "data-poster",
   "data-original",
   "lazy-src"
 ];
@@ -135,6 +137,16 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
           }
         }
       }
+      if (
+        content &&
+        metaResourceKind({
+          name: attrs.get("name"),
+          property: attrs.get("property"),
+          itemprop: attrs.get("itemprop")
+        })
+      ) {
+        addResource(content, "CRAWLED_PAGE", element, "content");
+      }
     }
     if (
       element.tagName === "link" &&
@@ -146,6 +158,22 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
           canonicalUrl = normalizeUrl(href, baseUrl).canonicalUrl;
         } catch {
           canonicalUrl = undefined;
+        }
+      }
+    }
+    if (element.tagName === "link") {
+      const href = attrs.get("href");
+      if (href) {
+        try {
+          const url = normalizeUrl(href, baseUrl).canonicalUrl;
+          const kind = linkTargetKind(attrs.get("rel"));
+          if (looksLikeFileUrl(url) || kind === "resource") {
+            addResource(href, "CRAWLED_PAGE", element, "href");
+          } else if (kind === "page") {
+            pageMap.set(url, { url, tagName: "link", noFollow: false });
+          }
+        } catch {
+          // 无效 link 地址忽略。
         }
       }
     }

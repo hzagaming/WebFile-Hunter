@@ -8,6 +8,7 @@ describe("extension message validation", () => {
     ).toBe(true);
     expect(validateExtensionRequest({ type: "CLEAR_HISTORY" }).success).toBe(true);
     expect(validateExtensionRequest({ type: "GET_DOWNLOADS" }).success).toBe(true);
+    expect(validateExtensionRequest({ type: "REVOKE_ALL_SITES" }).success).toBe(true);
     expect(validateExtensionRequest({ type: "GET_SNAPSHOT", payload: { tabId: 9 } }).success).toBe(
       true
     );

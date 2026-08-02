@@ -761,6 +761,41 @@ h3 {
   display: grid;
   gap: 6px;
 }
+.permission-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #cde2e9;
+  border-radius: 9px;
+  background: #eaf6f8;
+}
+.permission-scope.enabled {
+  border-color: #bdddb8;
+  background: #edf8e9;
+}
+.permission-scope.partial {
+  border-color: #f3d796;
+  background: #fff8e5;
+}
+.permission-scope > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.permission-scope small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.permission-scope button {
+  flex: 0 0 auto;
+}
+.permission-subheading {
+  margin-top: 14px;
+}
 .permission-list > div {
   display: flex;
   align-items: center;

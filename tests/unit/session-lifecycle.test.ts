@@ -27,6 +27,7 @@ vi.mock("@/background/crawler-engine", () => ({ cancelCrawler: mocks.cancelCrawl
 vi.mock("@/background/page-scanner", () => ({ injectPageScanner: mocks.injectPageScanner }));
 vi.mock("@/background/permission-manager", () => ({
   hasOriginPermission: mocks.hasOriginPermission,
+  isAllSitesOrigin: (origin: string) => ["http://*/*", "https://*/*"].includes(origin),
   originPattern: (url: string) => `${new URL(url).origin}/*`
 }));
 vi.mock("@/background/session-manager", () => ({
@@ -121,6 +122,15 @@ describe("scan session lifecycle", () => {
     const stopOrder = vi.mocked(chrome.tabs.sendMessage).mock.invocationCallOrder[0];
     const finishOrder = mocks.finishSession.mock.invocationCallOrder[0];
     expect(stopOrder).toBeLessThan(finishOrder!);
+  });
+
+  it("撤销完整嗅探权限时停止实时任务", async () => {
+    mocks.listSessions.mockResolvedValue([liveSession()]);
+    mocks.hasOriginPermission.mockResolvedValue(true);
+
+    await stopSessionsForRemovedOrigins(["https://*/*"]);
+
+    expect(mocks.finishSession).toHaveBeenCalledWith("session-live", "cancelled");
   });
 
   it("删除运行中的任务前先停止任务", async () => {

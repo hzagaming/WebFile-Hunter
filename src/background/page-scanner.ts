@@ -3,7 +3,9 @@ import { looksLikeFileUrl } from "@/core/file-classifier";
 import { putFiles, getSession, listFiles } from "@/database/db";
 import { getSettings } from "@/database/settings";
 import { broadcast } from "./broadcast";
+import { enqueueCrawlerPages } from "./crawler-engine";
 import { finishSession, patchSession } from "./session-manager";
+import { hasAllSitesPermission } from "./permission-manager";
 import type { PageScanResult, RawResource } from "@/types/scanner";
 
 const RESOURCE_TAGS = new Set([
@@ -81,17 +83,24 @@ export async function handlePageScanResult(
   }
   if (!["http:", "https:"].includes(pageUrl.protocol))
     throw new TypeError("页面扫描结果协议无效。");
-  if (pageUrl.origin !== session.origin)
+  const isExternalFrame = pageUrl.origin !== session.origin;
+  if (isExternalFrame && !(await hasAllSitesPermission()))
     throw new TypeError("页面扫描结果 origin 与扫描任务不一致。");
 
+  const queuedPages =
+    session.mode === "recursive_crawl"
+      ? enqueueCrawlerPages(session, result.pageUrl, result.pages)
+      : 0;
   const settings = await getSettings();
+  const sourcePageUrl = isExternalFrame ? session.startUrl : result.pageUrl;
   const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
     try {
       const candidate = createFileCandidate({
         url: resource.url,
         source: resource.source,
-        sourcePageUrl: result.pageUrl,
+        sourcePageUrl,
         sourcePageTitle: result.title,
+        ...(isExternalFrame ? { parentUrl: result.pageUrl } : {}),
         tabId: session.tabId,
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
@@ -109,7 +118,11 @@ export async function handlePageScanResult(
   const current = await getSession(sessionId);
   if (current) {
     await patchSession(sessionId, {
-      pagesProcessed: liveBatch ? current.pagesProcessed : current.pagesProcessed + 1,
+      pagesProcessed:
+        liveBatch || current.mode === "recursive_crawl"
+          ? current.pagesProcessed
+          : current.pagesProcessed + 1,
+      ...(queuedPages ? { pagesQueued: current.pagesQueued + queuedPages } : {}),
       filesDiscovered: (await listFiles(sessionId)).length
     });
     if (current.mode === "current_page" && current.status === "running") {

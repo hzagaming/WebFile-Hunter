@@ -8,7 +8,7 @@ import {
 import type { ScanSession, ScanStatus } from "@/types/models";
 import { cancelCrawler } from "./crawler-engine";
 import { injectPageScanner } from "./page-scanner";
-import { hasOriginPermission, originPattern } from "./permission-manager";
+import { hasOriginPermission, isAllSitesOrigin, originPattern } from "./permission-manager";
 import { finishSession, liveSessionIdForTab, patchSession } from "./session-manager";
 
 interface LiveTabChange {
@@ -105,8 +105,15 @@ export async function handleLiveTabUpdated(
 
 export async function stopSessionsForRemovedOrigins(origins: readonly string[]): Promise<void> {
   const removed = new Set(origins);
+  const broadAccessRemoved = origins.some(isAllSitesOrigin);
   for (const session of await listSessions()) {
-    if (removed.has(originPattern(session.startUrl))) await stopScanSession(session);
+    if (
+      removed.has(originPattern(session.startUrl)) ||
+      (broadAccessRemoved &&
+        (session.mode === "live_monitor" || !(await hasOriginPermission(session.startUrl))))
+    ) {
+      await stopScanSession(session);
+    }
   }
 }
 

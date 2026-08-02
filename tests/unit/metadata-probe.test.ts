@@ -1,10 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { probeUrlMetadata, safeFetch } from "@/background/metadata-probe";
+import {
+  fetchWithRetries,
+  metadataFromResponse,
+  probeUrlMetadata,
+  readLimitedText,
+  safeFetch
+} from "@/background/metadata-probe";
 import { DEFAULT_SCAN_CONFIG } from "@/utils/defaults";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("metadata probe", () => {
+  it("响应未声明 Content-Length 时不伪造 0 字节大小", () => {
+    expect(
+      metadataFromResponse("https://example.com/file", new Response("body"))
+    ).not.toHaveProperty("contentLength");
+  });
+
+  it("页面 GET 遇到临时限流时遵守 Retry-After 重试", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "Retry-After": "0" } }))
+      .mockResolvedValueOnce(new Response("<title>恢复</title>", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await fetchWithRetries(
+      "https://example.com/page",
+      { method: "GET" },
+      {
+        origin: "https://example.com",
+        config: { ...DEFAULT_SCAN_CONFIG, retries: 1 },
+        signal: new AbortController().signal
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("按响应 charset 解码非 UTF-8 HTML", async () => {
+    const prefix = new TextEncoder().encode("<title>");
+    const suffix = new TextEncoder().encode("</title>");
+    const body = new Uint8Array([...prefix, 0xb2, 0xe2, 0xca, 0xd4, ...suffix]);
+    const response = new Response(body, {
+      headers: { "Content-Type": "text/html; charset=gbk" }
+    });
+
+    await expect(readLimitedText(response, 1024)).resolves.toBe("<title>测试</title>");
+  });
+
   it("HEAD 不支持时使用受限 Range GET 并解析响应头", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

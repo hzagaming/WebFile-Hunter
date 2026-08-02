@@ -23,6 +23,10 @@ export interface SafeFetchOptions {
   onRequestStart?: (url: string) => void;
 }
 
+export interface ReadLimitedTextOptions {
+  decompressGzip?: boolean;
+}
+
 function combineSignals(
   signal: AbortSignal,
   timeoutMs: number
@@ -92,45 +96,16 @@ export async function safeFetch(
   }
 }
 
-function metadataFromResponse(originalUrl: string, response: Response): ResourceMetadata {
-  const length = Number(response.headers.get("content-length"));
-  const mimeType = response.headers.get("content-type");
-  const contentDisposition = response.headers.get("content-disposition");
-  const etag = response.headers.get("etag");
-  const lastModified = response.headers.get("last-modified");
-  const acceptRanges = response.headers.get("accept-ranges");
-  return {
-    originalUrl,
-    finalUrl: response.url || originalUrl,
-    status: response.status,
-    ...(mimeType ? { mimeType } : {}),
-    ...(Number.isSafeInteger(length) && length >= 0 ? { contentLength: length } : {}),
-    ...(contentDisposition ? { contentDisposition } : {}),
-    ...(etag ? { etag } : {}),
-    ...(lastModified ? { lastModified } : {}),
-    ...(acceptRanges ? { acceptRanges } : {})
-  };
-}
-
-export async function probeUrlMetadata(
+export async function fetchWithRetries(
   url: string,
+  init: RequestInit,
   options: SafeFetchOptions
-): Promise<ResourceMetadata> {
+): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= options.config.retries; attempt += 1) {
     try {
-      let response = await safeFetch(url, { method: "HEAD" }, options);
-      if (response.status === 405 || response.status === 501) {
-        await response.body?.cancel();
-        response = await safeFetch(
-          url,
-          { method: "GET", headers: { Range: "bytes=0-0" } },
-          options
-        );
-      }
-      const metadata = metadataFromResponse(url, response);
-      await response.body?.cancel();
-      if (response.ok || response.status === 206) return metadata;
+      const response = await safeFetch(url, init, options);
+      if (response.ok) return response;
       const retryAfter = response.headers.get("retry-after");
       const decision = getRetryDecision({
         attempt,
@@ -139,11 +114,11 @@ export async function probeUrlMetadata(
         now: Date.now(),
         maxRetries: options.config.retries
       });
-      if (!decision.retry) throw new NonRetryableProbeError(`服务器返回 HTTP ${response.status}。`);
+      if (!decision.retry) return response;
+      await response.body?.cancel();
       await abortableDelay(decision.delayMs, options.signal);
     } catch (error) {
-      if (options.signal.aborted) throw error;
-      if (error instanceof NonRetryableProbeError) throw error;
+      if (options.signal.aborted || error instanceof NonRetryableProbeError) throw error;
       lastError = error;
       const decision = getRetryDecision({
         attempt,
@@ -155,17 +130,98 @@ export async function probeUrlMetadata(
       await abortableDelay(decision.delayMs, options.signal);
     }
   }
-  throw lastError instanceof Error ? lastError : new TypeError("元数据探测失败。");
+  throw lastError instanceof Error ? lastError : new TypeError("请求重试失败。");
 }
 
-export async function readLimitedText(response: Response, maxBytes: number): Promise<string> {
+export function metadataFromResponse(originalUrl: string, response: Response): ResourceMetadata {
+  const lengthHeader = response.headers.get("content-length");
+  const length = lengthHeader === null ? undefined : Number(lengthHeader);
+  const mimeType = response.headers.get("content-type");
+  const contentDisposition = response.headers.get("content-disposition");
+  const etag = response.headers.get("etag");
+  const lastModified = response.headers.get("last-modified");
+  const acceptRanges = response.headers.get("accept-ranges");
+  return {
+    originalUrl,
+    finalUrl: response.url || originalUrl,
+    status: response.status,
+    ...(mimeType ? { mimeType } : {}),
+    ...(length !== undefined && Number.isSafeInteger(length) && length >= 0
+      ? { contentLength: length }
+      : {}),
+    ...(contentDisposition ? { contentDisposition } : {}),
+    ...(etag ? { etag } : {}),
+    ...(lastModified ? { lastModified } : {}),
+    ...(acceptRanges ? { acceptRanges } : {})
+  };
+}
+
+export async function probeUrlMetadata(
+  url: string,
+  options: SafeFetchOptions
+): Promise<ResourceMetadata> {
+  let response = await fetchWithRetries(url, { method: "HEAD" }, options);
+  if (response.status === 405 || response.status === 501) {
+    await response.body?.cancel();
+    response = await fetchWithRetries(
+      url,
+      { method: "GET", headers: { Range: "bytes=0-0" } },
+      options
+    );
+  }
+  const metadata = metadataFromResponse(url, response);
+  await response.body?.cancel();
+  if (response.ok) return metadata;
+  throw new NonRetryableProbeError(`服务器返回 HTTP ${response.status}。`);
+}
+
+function declaredCharset(response: Response): string | undefined {
+  return /(?:^|;)\s*charset\s*=\s*["']?([^;"'\s]+)/i.exec(
+    response.headers.get("content-type") ?? ""
+  )?.[1];
+}
+
+function sniffCharset(bytes: Uint8Array): string | undefined {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
+  const head = new TextDecoder("windows-1252").decode(bytes.slice(0, 2048));
+  return (
+    /<meta\b[^>]*\bcharset\s*=\s*["']?([^\s"'/>;]+)/i.exec(head)?.[1] ??
+    /<meta\b[^>]*\bcontent\s*=\s*["'][^"']*charset\s*=\s*([^\s"';]+)/i.exec(head)?.[1]
+  );
+}
+
+function decodeText(bytes: Uint8Array, response: Response): string {
+  const charset = declaredCharset(response) ?? sniffCharset(bytes) ?? "utf-8";
+  try {
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    return new TextDecoder().decode(bytes);
+  }
+}
+
+export async function readLimitedText(
+  response: Response,
+  maxBytes: number,
+  options: ReadLimitedTextOptions = {}
+): Promise<string> {
   const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > maxBytes) {
+  if (!options.decompressGzip && Number.isFinite(declared) && declared > maxBytes) {
     await response.body?.cancel();
     throw new RangeError("HTML 页面超过大小限制。");
   }
-  if (!response.body) return "";
-  const reader = response.body.getReader();
+  let body = response.body;
+  if (!body) return "";
+  if (options.decompressGzip) {
+    try {
+      body = body.pipeThrough(new DecompressionStream("gzip"));
+    } catch {
+      await body.cancel();
+      throw new TypeError("无法解压 Sitemap gzip 内容。");
+    }
+  }
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
@@ -188,5 +244,5 @@ export async function readLimitedText(response: Response, maxBytes: number): Pro
     merged.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(merged);
+  return decodeText(merged, response);
 }

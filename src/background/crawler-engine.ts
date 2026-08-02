@@ -1,8 +1,10 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
+import { looksLikeFileUrl } from "@/core/file-classifier";
 import { extractLinksFromHtml } from "@/core/html-link-extractor";
 import { isHtmlMime } from "@/core/mime-map";
+import { parseSitemapXml } from "@/core/sitemap-parser";
 import { inspectUrlSafety } from "@/core/url-security";
-import { redactUrlForLog } from "@/core/url-normalizer";
+import { normalizeUrl, redactUrlForLog } from "@/core/url-normalizer";
 import {
   deleteCheckpoint,
   getCheckpoint,
@@ -16,13 +18,19 @@ import { createId } from "@/utils/id";
 import { broadcast } from "./broadcast";
 import { CrawlerQueue } from "./crawler-queue";
 import { persistCrawlerCheckpoint } from "./checkpoint-manager";
-import { probeUrlMetadata, readLimitedText, safeFetch } from "./metadata-probe";
+import {
+  fetchWithRetries,
+  metadataFromResponse,
+  probeUrlMetadata,
+  readLimitedText
+} from "./metadata-probe";
 import type { SafeFetchOptions } from "./metadata-probe";
 import { OriginRateLimiter } from "./rate-limiter";
 import { hasOriginPermission } from "./permission-manager";
 import { parseRobotsTxt, type RobotsRules } from "./robots-parser";
 import { finishSession, patchSession } from "./session-manager";
 import type { CrawlQueueItem, ScanProgress, ScanSession } from "@/types/models";
+import type { PageCandidate } from "@/types/scanner";
 
 interface ActiveCrawl {
   controller: AbortController;
@@ -37,12 +45,55 @@ interface ActiveCrawl {
 
 const activeCrawls = new Map<string, ActiveCrawl>();
 const resumingCrawls = new Set<string>();
+const MAX_SITEMAP_FILES = 10;
 
 function recentRequestCount(active: ActiveCrawl, now = Date.now()): number {
   while (active.requestTimes[0] !== undefined && active.requestTimes[0] < now - 60_000) {
     active.requestTimes.shift();
   }
   return active.requestTimes.length;
+}
+
+export function enqueueCrawlerPages(
+  session: ScanSession,
+  sourcePageUrl: string,
+  pages: readonly PageCandidate[]
+): number {
+  const active = activeCrawls.get(session.id);
+  if (!active?.queue || session.mode !== "recursive_crawl" || session.status !== "running")
+    return 0;
+  try {
+    if (new URL(sourcePageUrl).origin !== session.origin) return 0;
+  } catch {
+    return 0;
+  }
+  let added = 0;
+  for (const page of pages) {
+    if (page.noFollow) continue;
+    const safety = inspectUrlSafety(page.url, {
+      allowedOrigin: session.origin,
+      excludeDangerousActions: session.config.excludeDangerousActions
+    });
+    if (
+      safety.safe &&
+      active.queue.enqueue({
+        url: page.url,
+        depth: 1,
+        parentUrl: sourcePageUrl,
+        discoveredAt: Date.now()
+      })
+    ) {
+      added += 1;
+    }
+  }
+  if (added) {
+    active.progress = {
+      ...active.progress,
+      pagesQueued: active.progress.pagesQueued + added
+    };
+    broadcast({ type: "SCAN_PROGRESS", payload: active.progress });
+  }
+  return added;
 }
 
 function crawlerFetchOptions(session: ScanSession, active: ActiveCrawl): SafeFetchOptions {
@@ -75,7 +126,7 @@ async function loadRobots(session: ScanSession, active: ActiveCrawl): Promise<Ro
   if (!session.config.respectRobots) return parseRobotsTxt("");
   const response = await active.limiter.run(
     () =>
-      safeFetch(
+      fetchWithRetries(
         `${session.origin}/robots.txt`,
         { method: "GET" },
         crawlerFetchOptions(session, active)
@@ -100,6 +151,83 @@ async function loadRobots(session: ScanSession, active: ActiveCrawl): Promise<Ro
     active.limiter = new OriginRateLimiter(session.config.maxConcurrency, rules.crawlDelayMs);
   }
   return rules;
+}
+
+async function seedSitemaps(
+  session: ScanSession,
+  active: ActiveCrawl,
+  queue: CrawlerQueue,
+  robots: RobotsRules
+): Promise<void> {
+  const pending = [...robots.sitemaps];
+  const visited = new Set<string>();
+  while (pending.length && visited.size < MAX_SITEMAP_FILES && !active.controller.signal.aborted) {
+    const raw = pending.shift();
+    if (!raw) continue;
+    let sitemapUrl: string;
+    try {
+      sitemapUrl = normalizeUrl(raw, session.origin).canonicalUrl;
+    } catch {
+      continue;
+    }
+    if (visited.has(sitemapUrl)) continue;
+    const safety = inspectUrlSafety(sitemapUrl, {
+      allowedOrigin: session.origin,
+      excludeDangerousActions: false
+    });
+    if (!safety.safe) continue;
+    visited.add(sitemapUrl);
+    try {
+      const response = await active.limiter.run(
+        () => fetchWithRetries(sitemapUrl, { method: "GET" }, crawlerFetchOptions(session, active)),
+        active.controller.signal
+      );
+      if (!response.ok) {
+        await response.body?.cancel();
+        continue;
+      }
+      const sitemapPath = new URL(sitemapUrl).pathname.toLowerCase();
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      const rawGzip =
+        !response.headers.has("content-encoding") &&
+        (sitemapPath.endsWith(".gz") || /(?:application|binary)\/(?:x-)?gzip/.test(contentType));
+      const parsed = parseSitemapXml(
+        await readLimitedText(response, session.config.maxHtmlBytes, {
+          decompressGzip: rawGzip
+        }),
+        session.config.maxPages
+      );
+      for (const child of parsed.sitemaps) {
+        try {
+          const url = normalizeUrl(child, sitemapUrl).canonicalUrl;
+          if (!visited.has(url)) pending.push(url);
+        } catch {
+          // 无效 Sitemap 地址忽略。
+        }
+      }
+      for (const rawUrl of parsed.urls) {
+        try {
+          const url = normalizeUrl(rawUrl, sitemapUrl).canonicalUrl;
+          const pageSafety = inspectUrlSafety(url, {
+            allowedOrigin: session.origin,
+            excludeDangerousActions: session.config.excludeDangerousActions
+          });
+          if (pageSafety.safe && robots.isAllowed(url)) {
+            queue.enqueue({
+              url,
+              depth: 0,
+              parentUrl: session.startUrl,
+              discoveredAt: Date.now()
+            });
+          }
+        } catch {
+          // 无效或外域 Sitemap 条目忽略。
+        }
+      }
+    } catch (error) {
+      if (active.controller.signal.aborted) throw error;
+    }
+  }
 }
 
 async function recordCandidates(
@@ -172,14 +300,19 @@ async function processPage(
   if (!safety.safe) throw new TypeError(safety.message);
   if (!robots.isAllowed(item.url)) throw new TypeError("robots.txt 禁止访问该页面。");
 
-  const metadata = await active.limiter.run(
-    () =>
-      probeUrlMetadata(item.url, {
-        ...crawlerFetchOptions(session, active)
-      }),
+  const response = await active.limiter.run(
+    () => fetchWithRetries(item.url, { method: "GET" }, crawlerFetchOptions(session, active)),
     active.controller.signal
   );
-  if (!isHtmlMime(metadata.mimeType)) {
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new TypeError(`页面请求失败（HTTP ${response.status}）。`);
+  }
+  const metadata = metadataFromResponse(item.url, response);
+  const shouldParseHtml =
+    isHtmlMime(metadata.mimeType) || (!metadata.mimeType && !looksLikeFileUrl(item.url));
+  if (!shouldParseHtml) {
+    await response.body?.cancel();
     const settings = await getSettings();
     const candidate = createFileCandidate({
       url: item.url,
@@ -190,6 +323,9 @@ async function processPage(
       ...(metadata.mimeType ? { mimeType: metadata.mimeType } : {}),
       ...(metadata.contentLength !== undefined ? { contentLength: metadata.contentLength } : {}),
       ...(metadata.contentDisposition ? { contentDisposition: metadata.contentDisposition } : {}),
+      ...(metadata.etag ? { etag: metadata.etag } : {}),
+      ...(metadata.lastModified ? { lastModified: metadata.lastModified } : {}),
+      ...(metadata.acceptRanges ? { acceptRanges: metadata.acceptRanges } : {}),
       customExtensions: settings.customExtensions,
       customMimeTypes: settings.customMimeTypes
     });
@@ -198,21 +334,19 @@ async function processPage(
     broadcast({ type: "FILES_DISCOVERED", payload: { sessionId: session.id, files: stored } });
     return;
   }
-
-  const response = await active.limiter.run(
-    () => safeFetch(item.url, { method: "GET" }, crawlerFetchOptions(session, active)),
-    active.controller.signal
-  );
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new TypeError(`页面请求失败（HTTP ${response.status}）。`);
-  }
   const html = await readLimitedText(response, session.config.maxHtmlBytes);
-  const finalUrl = response.url || item.url;
+  const finalUrl = metadata.finalUrl;
   const extracted = extractLinksFromHtml(html, finalUrl);
   await recordCandidates(session, finalUrl, extracted.title, extracted.resources, active);
   if (!extracted.noFollow && item.depth < session.config.maxDepth) {
-    for (const page of extracted.pages) {
+    const pages = [...extracted.pages];
+    if (extracted.metaRefresh) {
+      pages.push({ url: extracted.metaRefresh, tagName: "meta", noFollow: false });
+    }
+    if (extracted.canonicalUrl && extracted.canonicalUrl !== finalUrl) {
+      pages.push({ url: extracted.canonicalUrl, tagName: "link", noFollow: false });
+    }
+    for (const page of pages) {
       if (page.noFollow) continue;
       const pageSafety = inspectUrlSafety(page.url, {
         allowedOrigin: session.origin,
@@ -259,10 +393,12 @@ async function run(
     queue.enqueue({ url: session.startUrl, depth: 0, parentUrl: null, discoveredAt: Date.now() });
   let processed = visited.size;
   let errors = session.errors;
+  let successfulPages = restored ? Math.max(0, session.pagesProcessed - session.errors) : 0;
   let lastCheckpoint = Date.now();
   try {
     await persistCrawlerCheckpoint(session.id, queue.snapshot().items, visited);
     const robots = await loadRobots(session, active);
+    await seedSitemaps(session, active, queue, robots);
     while (queue.size && !controller.signal.aborted) {
       const batch: CrawlQueueItem[] = [];
       while (batch.length < session.config.maxConcurrency) {
@@ -276,6 +412,7 @@ async function run(
         batch.map(async (item) => {
           try {
             await processPage(session, item, queue, robots, active);
+            successfulPages += 1;
           } catch (error) {
             if (controller.signal.aborted) return;
             errors += 1;
@@ -319,7 +456,15 @@ async function run(
     }
     if (!controller.signal.aborted) {
       await deleteCheckpoint(session.id);
-      await finishSession(session.id, "completed");
+      if (!successfulPages && errors) {
+        await failCrawler(
+          session.id,
+          new TypeError("没有页面抓取成功，请检查权限、robots 或网站响应。"),
+          "递归扫描失败。"
+        );
+      } else {
+        await finishSession(session.id, "completed");
+      }
     }
   } catch (error) {
     if (!controller.signal.aborted) {

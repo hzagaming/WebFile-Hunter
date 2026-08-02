@@ -26,12 +26,41 @@ describe("Popup", () => {
     render(<Popup />);
     expect(await screen.findByText(/仅支持 HTTP 或 HTTPS/)).toHaveAttribute("role", "status");
     expect(screen.getByRole("button", { name: "扫描当前页面" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "开始监听" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "完整实时嗅探" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "打开侧边栏" })).toBeEnabled();
     expect(screen.getByText("⌕")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("快速扫描也先获得当前站点权限", async () => {
+    const user = userEvent.setup();
+    const request = vi.fn(() => Promise.resolve(true));
+    const open = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis, "chrome", {
+      configurable: true,
+      value: {
+        tabs: {
+          query: vi.fn(() => Promise.resolve([{ id: 7, url: "https://media.example.test/watch" }]))
+        },
+        sidePanel: { open },
+        permissions: { request }
+      }
+    });
+    render(<Popup />);
+
+    await user.click(await screen.findByRole("button", { name: "扫描当前页面" }));
+
+    expect(request).toHaveBeenCalledWith({ origins: ["https://media.example.test/*"] });
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: "SCAN_CURRENT_PAGE",
+      payload: { tabId: 7 }
+    });
+    expect(request.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]!);
+    expect(mocks.sendMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      open.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it("实时嗅探请求全站权限并保持当前标签页隔离", async () => {
     const user = userEvent.setup();
     const request = vi.fn(() => Promise.resolve(true));
     Object.defineProperty(globalThis, "chrome", {
@@ -46,12 +75,12 @@ describe("Popup", () => {
     });
     render(<Popup />);
 
-    await user.click(await screen.findByRole("button", { name: "扫描当前页面" }));
+    await user.click(await screen.findByRole("button", { name: "完整实时嗅探" }));
 
-    expect(request).toHaveBeenCalledWith({ origins: ["https://media.example.test/*"] });
+    expect(request).toHaveBeenCalledWith({ origins: ["http://*/*", "https://*/*"] });
     expect(mocks.sendMessage).toHaveBeenCalledWith({
-      type: "SCAN_CURRENT_PAGE",
-      payload: { tabId: 7 }
+      type: "START_LIVE_MONITOR",
+      payload: { tabId: 7, origin: "https://media.example.test" }
     });
   });
 });

@@ -1,9 +1,9 @@
-# 1.0.0
+# 1.1.0
 
-WebFile Hunter 现已进入首个稳定正式版。侧栏无论从哪里打开，都能识别所在窗口当前的普通 HTTP/HTTPS 网页；新增的标签页权限只用于读取当前 URL 与标题，页面内容访问仍须用户点击，并继续按站点单独授权，不会获得全局网站读取权限。
+WebFile Hunter 1.1.0 进一步补齐了公开网页资源发现链路。递归扫描现在直接 GET HTML，并能从 robots.txt 声明的 Sitemap/Sitemap Index、raw gzip Sitemap 与当前 SPA 已渲染 DOM 补充同源公开页面；robots.txt 和 Sitemap 请求也统一遵守重试、退避、速率与取消配置。
 
-正式版修复了多窗口侧栏串站点、首次侧栏扫描无法注入、超大网页整批结果被拒绝、图片开关在不同发现管线行为不一致等问题。页面标题、URL 和单批资源均在内容端安全限界；当前页、实时监听与递归扫描现在共享一致的分类与显示规则。
+页面发现新增 Open Graph、Twitter Card、itemprop、video poster、SVG image 和动态 `data-poster` 等资源，过滤 canonical、preconnect 等非资源 link 噪声。HTML 会按响应头、BOM 或 meta 声明解码 GBK 等常见字符集，减少非 UTF-8 站点漏抓。
 
-`blob:` 临时资源仍会出现在独立“可能资源”分类，但无效的打开、元数据探测和下载操作已全部禁用。任务控制期间会阻止重复点击；键盘焦点更加清晰，reduced-motion 下不再运行无限旋转动画。
+本版同时修复网络资源来源页路径丢失、已有完整权限时外域元数据按钮仍禁用、Popup 打开侧栏打断权限手势、全失败任务假完成和恢复计数丢失等问题。扫描入口现在明确说明 Sitemap 与 SPA DOM 能力；废弃的无效配置已移除，运行时设置会严格归一化。
 
-真实 Microsoft Edge E2E 已验证未授权网站识别与权限隔离、当前页扫描、实时监听、同源递归、TXT/CSV/JSON 与历史导出、下载真实落盘、五页窄侧栏和数据清理。扩展仍完全本地运行，不上传扫描数据，默认静音，不播放音效或背景音乐。
+真实 Microsoft Edge E2E 已验证 Sitemap Index/raw gzip 隐藏页、拒绝 HEAD 但允许 GET 页面、SPA 动态路由、第三方 CDN/frame、导出下载和 280/320/380px 五页侧栏。扩展仍完全本地运行，不上传扫描数据，默认静音，不播放音效或背景音乐。

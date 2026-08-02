@@ -7,7 +7,16 @@ import { scanSession } from "../helpers/fixtures";
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   failScanSessionStart: vi.fn(),
-  injectPageScanner: vi.fn()
+  hasAllSitesPermission: vi.fn(),
+  hasOriginPermission: vi.fn(),
+  injectPageScanner: vi.fn(),
+  startCrawler: vi.fn()
+}));
+
+vi.mock("@/background/crawler-engine", () => ({
+  pauseCrawler: vi.fn(),
+  resumeCrawler: vi.fn(),
+  startCrawler: mocks.startCrawler
 }));
 
 vi.mock("@/background/session-manager", () => ({
@@ -27,6 +36,13 @@ vi.mock("@/background/session-lifecycle", () => ({
   stopScanSession: vi.fn(),
   stopSessionsForRemovedOrigins: vi.fn()
 }));
+vi.mock("@/background/permission-manager", () => ({
+  getGrantedOrigins: vi.fn(),
+  hasAllSitesPermission: mocks.hasAllSitesPermission,
+  hasOriginPermission: mocks.hasOriginPermission,
+  revokeAllSitesPermission: vi.fn(),
+  revokeOrigin: vi.fn()
+}));
 
 type RuntimeListener = (
   message: unknown,
@@ -43,6 +59,8 @@ beforeEach(() => {
   runtimeListener = undefined;
   createAlarm.mockResolvedValue(undefined);
   mocks.createSession.mockResolvedValue(scanSession({ status: "running" }));
+  mocks.hasAllSitesPermission.mockResolvedValue(true);
+  mocks.hasOriginPermission.mockResolvedValue(true);
   mocks.injectPageScanner.mockResolvedValue(undefined);
   globalThis.chrome = {
     alarms: { create: createAlarm },
@@ -79,5 +97,47 @@ describe("MessageRouter current page scan", () => {
     expect(name).toBe("scan:session-fixture");
     expect(alarmInfo.when).toBeGreaterThan(Date.now() + 25_000);
     expect(mocks.injectPageScanner).toHaveBeenCalledWith("session-fixture", 1);
+  });
+
+  it("没有全站权限时拒绝启动完整实时嗅探", async () => {
+    mocks.hasAllSitesPermission.mockResolvedValue(false);
+    new MessageRouter({} as DownloadManager);
+    const response = await new Promise<MessageResponse>((resolve) => {
+      runtimeListener?.(
+        {
+          type: "START_LIVE_MONITOR",
+          payload: { tabId: 1, origin: "https://example.test" }
+        },
+        { id: "extension-id" },
+        resolve
+      );
+    });
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).toContain("完整嗅探");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("递归爬取启动后注入当前渲染 DOM 作为页面种子", async () => {
+    const session = scanSession({ mode: "recursive_crawl", status: "running" });
+    mocks.createSession.mockResolvedValue(session);
+    new MessageRouter({} as DownloadManager);
+    const response = await new Promise<MessageResponse>((resolve) => {
+      runtimeListener?.(
+        {
+          type: "START_RECURSIVE_CRAWL",
+          payload: { tabId: 1, config: session.config }
+        },
+        { id: "extension-id" },
+        resolve
+      );
+    });
+
+    expect(response.ok).toBe(true);
+    expect(mocks.startCrawler).toHaveBeenCalledWith(session);
+    expect(mocks.injectPageScanner).toHaveBeenCalledWith(session.id, session.tabId);
+    expect(mocks.startCrawler.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.injectPageScanner.mock.invocationCallOrder[0]!
+    );
   });
 });

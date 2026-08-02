@@ -57,6 +57,12 @@ describe("ScannerPage", () => {
     expect(screen.getByText(/180 秒/)).toBeInTheDocument();
   });
 
+  it("递归入口明确说明 Sitemap 与当前 SPA DOM 补种", () => {
+    render(<ScannerPage snapshot={appSnapshot()} refresh={vi.fn()} openResults={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /同域递归扫描/ })).toHaveTextContent("Sitemap");
+    expect(screen.getByRole("button", { name: /同域递归扫描/ })).toHaveTextContent("SPA");
+  });
+
   it("从侧栏扫描当前页时先请求当前站点权限", async () => {
     const user = userEvent.setup();
     const created = scanSession({ id: "created-session", status: "running" });
@@ -87,6 +93,35 @@ describe("ScannerPage", () => {
       payload: { tabId: 9 }
     });
     expect(refresh).toHaveBeenCalledWith("created-session");
+  });
+
+  it("实时嗅探请求 HTTP 与 HTTPS 全站权限以覆盖第三方资源", async () => {
+    const user = userEvent.setup();
+    mocks.sendMessage.mockResolvedValue(scanSession({ id: "live-session", mode: "live_monitor" }));
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://media.example.test/watch",
+            title: "Media",
+            origin: "https://media.example.test"
+          }
+        })}
+        refresh={vi.fn().mockResolvedValue(undefined)}
+        openResults={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /开始完整嗅探/ }));
+
+    expect(mocks.requestPermission).toHaveBeenCalledWith({
+      origins: ["http://*/*", "https://*/*"]
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: "START_LIVE_MONITOR",
+      payload: { tabId: 9, origin: "https://media.example.test" }
+    });
   });
 
   it("控制请求进行中时禁用任务按钮以阻止重复操作", async () => {

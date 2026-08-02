@@ -56,7 +56,6 @@ export type ScanStatus =
   "created" | "requesting_permission" | "running" | "paused" | "completed" | "cancelled" | "failed";
 
 export interface ScanConfig {
-  sameOriginOnly: boolean;
   respectRobots: boolean;
   maxDepth: number;
   maxPages: number;
@@ -68,7 +67,6 @@ export interface ScanConfig {
   followRedirects: boolean;
   maxRedirects: number;
   retries: number;
-  excludeLogout: boolean;
   excludeDangerousActions: boolean;
 }
 

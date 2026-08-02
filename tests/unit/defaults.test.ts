@@ -34,6 +34,19 @@ describe("clampScanConfig", () => {
     });
   });
 
+  it("丢弃未生效的旧配置与未知字段", () => {
+    const result = clampScanConfig({
+      ...DEFAULT_SETTINGS.scan,
+      sameOriginOnly: false,
+      excludeLogout: false,
+      obsolete: true
+    } as typeof DEFAULT_SETTINGS.scan & { obsolete: boolean });
+
+    expect(result).not.toHaveProperty("sameOriginOnly");
+    expect(result).not.toHaveProperty("excludeLogout");
+    expect(result).not.toHaveProperty("obsolete");
+  });
+
   it("限制设置页的监听、下载与保留范围", () => {
     expect(
       clampAppSettings({

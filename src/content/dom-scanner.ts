@@ -1,4 +1,5 @@
 import { looksLikeFileUrl } from "@/core/file-classifier";
+import { linkTargetKind, metaResourceKind } from "@/core/html-resource-policy";
 import { normalizeUrl } from "@/core/url-normalizer";
 import type { PageCandidate, PageScanResult, RawResource } from "@/types/scanner";
 import { extractCssUrls, scanAccessibleStylesheets } from "./style-url-scanner";
@@ -11,19 +12,20 @@ const MAX_URL_LENGTH = 16_384;
 const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["a", ["href"]],
   ["audio", ["src"]],
-  ["video", ["src"]],
+  ["video", ["src", "poster"]],
   ["source", ["src", "srcset"]],
   ["track", ["src"]],
   ["iframe", ["src"]],
   ["embed", ["src"]],
   ["object", ["data"]],
   ["img", ["src", "srcset"]],
+  ["image", ["href", "xlink:href"]],
   ["link", ["href"]],
   ["script", ["src"]],
   ["input", ["src"]],
   ["form", ["action"]],
   [
-    "[data-src],[data-url],[data-href],[data-download],[data-file],[data-audio],[data-video],[data-original],[lazy-src]",
+    "[data-src],[data-url],[data-href],[data-download],[data-file],[data-audio],[data-video],[data-poster],[data-original],[lazy-src]",
     [
       "data-src",
       "data-url",
@@ -32,6 +34,7 @@ const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
       "data-file",
       "data-audio",
       "data-video",
+      "data-poster",
       "data-original",
       "lazy-src"
     ]
@@ -99,6 +102,15 @@ export function scanDocument(
         for (const value of values) {
           const url = normalize(value);
           if (!url) continue;
+          if (element.tagName.toLowerCase() === "link") {
+            const kind = linkTargetKind(element.getAttribute("rel") ?? undefined);
+            if (looksLikeFileUrl(url) || kind === "resource") {
+              addResource(value, element, attribute, "DOM_ATTRIBUTE");
+            } else if (kind === "page" && pages.size < MAX_ITEMS && !pages.has(url)) {
+              pages.set(url, { url, tagName: "link", noFollow: false });
+            }
+            continue;
+          }
           const pageElement = element.matches("a,form,iframe");
           const downloadable =
             element instanceof HTMLAnchorElement && element.hasAttribute("download");
@@ -133,7 +145,14 @@ export function scanDocument(
   }
   for (const meta of document.querySelectorAll<HTMLMetaElement>("meta[content]")) {
     const content = meta.content.trim();
-    if (/^https?:\/\//i.test(content)) addResource(content, meta, "content", "DOM_ATTRIBUTE");
+    const kind = metaResourceKind({
+      name: meta.name || undefined,
+      property: meta.getAttribute("property") ?? undefined,
+      itemprop: meta.getAttribute("itemprop") ?? undefined
+    });
+    if (content && kind && !(kind === "image" && options.includeImages === false)) {
+      addResource(content, meta, "content", "DOM_ATTRIBUTE");
+    }
   }
 
   return {

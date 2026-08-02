@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { scanSession } from "../helpers/fixtures";
+import type { FileCandidate } from "@/types/models";
 
 const mocks = vi.hoisted(() => ({
   broadcast: vi.fn(),
+  enqueueCrawlerPages: vi.fn(),
   getSession: vi.fn(),
   getSettings: vi.fn(),
   finishSession: vi.fn(),
   listFiles: vi.fn(),
   patchSession: vi.fn(),
-  putFiles: vi.fn()
+  hasAllSitesPermission: vi.fn(),
+  putFiles:
+    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>()
 }));
 
 vi.mock("@/database/db", () => ({
@@ -18,9 +22,15 @@ vi.mock("@/database/db", () => ({
 }));
 vi.mock("@/database/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
+vi.mock("@/background/crawler-engine", () => ({
+  enqueueCrawlerPages: mocks.enqueueCrawlerPages
+}));
 vi.mock("@/background/session-manager", () => ({
   finishSession: mocks.finishSession,
   patchSession: mocks.patchSession
+}));
+vi.mock("@/background/permission-manager", () => ({
+  hasAllSitesPermission: mocks.hasAllSitesPermission
 }));
 
 import { handlePageScanResult } from "@/background/page-scanner";
@@ -31,6 +41,8 @@ beforeEach(() => {
   } as unknown as typeof chrome;
   mocks.getSession.mockResolvedValue(scanSession({ status: "running" }));
   mocks.getSettings.mockResolvedValue({ customExtensions: {}, customMimeTypes: {} });
+  mocks.hasAllSitesPermission.mockResolvedValue(false);
+  mocks.enqueueCrawlerPages.mockReturnValue(0);
   mocks.putFiles.mockResolvedValue([]);
   mocks.listFiles.mockResolvedValue([]);
 });
@@ -46,6 +58,53 @@ describe("handlePageScanResult security", () => {
       )
     ).rejects.toThrow("origin");
     expect(mocks.putFiles).not.toHaveBeenCalled();
+  });
+
+  it("实时嗅探接受同一标签页内跨域 frame 的扫描结果", async () => {
+    mocks.getSession.mockResolvedValue(scanSession({ status: "running", mode: "live_monitor" }));
+    mocks.hasAllSitesPermission.mockResolvedValue(true);
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        {
+          pageUrl: "https://frame.test/",
+          title: "frame",
+          resources: [
+            {
+              url: "https://frame.test/media/video.mp4",
+              source: "DOM_ATTRIBUTE",
+              tagName: "video",
+              isExternal: false
+            }
+          ],
+          pages: []
+        },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        true
+      )
+    ).resolves.toBe(1);
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toEqual(
+      expect.objectContaining({
+        sourcePageUrl: "https://example.test/page",
+        parentUrl: "https://frame.test/",
+        isExternal: true
+      })
+    );
+  });
+
+  it("已授予完整权限时当前页扫描也接受跨域 frame", async () => {
+    mocks.hasAllSitesPermission.mockResolvedValue(true);
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        { pageUrl: "https://frame.test/", title: "frame", resources: [], pages: [] },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).resolves.toBe(0);
   });
 
   it("收到当前页结果后立即完成任务，不依赖后台定时器", async () => {
@@ -75,6 +134,40 @@ describe("handlePageScanResult security", () => {
     ).resolves.toBe(0);
     expect(mocks.putFiles).toHaveBeenCalled();
     expect(mocks.finishSession).not.toHaveBeenCalled();
+  });
+
+  it("递归任务用当前渲染 DOM 的页面链接补充爬虫队列且不虚增已处理页数", async () => {
+    const session = scanSession({
+      status: "running",
+      mode: "recursive_crawl",
+      pagesProcessed: 0,
+      pagesQueued: 1
+    });
+    mocks.getSession.mockResolvedValue(session);
+    mocks.enqueueCrawlerPages.mockReturnValue(1);
+    const pages = [{ url: "https://example.test/spa-route", tagName: "a", noFollow: false }];
+
+    await handlePageScanResult(
+      session.id,
+      {
+        pageUrl: "https://example.test/page",
+        title: "SPA",
+        resources: [],
+        pages
+      },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
+    expect(mocks.enqueueCrawlerPages).toHaveBeenCalledWith(
+      session,
+      "https://example.test/page",
+      pages
+    );
+    expect(mocks.patchSession).toHaveBeenCalledWith(
+      session.id,
+      expect.objectContaining({ pagesProcessed: 0, pagesQueued: 2 })
+    );
   });
 
   it("拒绝超过 frame 收集窗口的旧当前页结果", async () => {

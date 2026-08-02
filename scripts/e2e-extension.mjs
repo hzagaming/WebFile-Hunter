@@ -20,7 +20,8 @@ const testManifest = JSON.parse(await readFile(testManifestPath, "utf8"));
 const server = await startTestServer();
 const recursiveOrigin = "http://wfh.test";
 const ungrantedOrigin = "http://ungranted.wfh.test";
-testManifest.host_permissions = ["http://127.0.0.1/*", `${recursiveOrigin}/*`];
+const cdnOrigin = "http://cdn.wfh.test";
+testManifest.host_permissions = ["http://*/*", "https://*/*"];
 await writeFile(testManifestPath, JSON.stringify(testManifest));
 let context;
 const browserErrors = [];
@@ -344,7 +345,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--no-proxy-server",
-      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port},MAP ungranted.wfh.test:80 127.0.0.1:${server.port}`
+      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port},MAP ungranted.wfh.test:80 127.0.0.1:${server.port},MAP cdn.wfh.test:80 127.0.0.1:${server.port}`
     ]
   });
   const worker =
@@ -365,11 +366,6 @@ try {
   const ungrantedPage = await context.newPage();
   watchPage(ungrantedPage, "ungranted");
   await ungrantedPage.goto(ungrantedOrigin, { waitUntil: "domcontentloaded" });
-  const hasUngrant = await permissionPage.evaluate(
-    (origin) => chrome.permissions.contains({ origins: [`${origin}/*`] }),
-    ungrantedOrigin
-  );
-  if (hasUngrant) throw new Error("未授权站点被意外授予了 Host 权限。");
   const ungrantedSnapshot = await send(permissionPage, { type: "GET_SNAPSHOT" });
   if (
     ungrantedSnapshot.activeTab?.url !== ungrantedPage.url() ||
@@ -415,12 +411,28 @@ try {
       rows.sessions.find((session) => session.id === currentSession.id)?.status === "completed"
   );
 
+  await fixturePage.evaluate(
+    (url) =>
+      new Promise((resolvePromise, reject) => {
+        const frame = document.createElement("iframe");
+        frame.src = url;
+        frame.onload = () => resolvePromise();
+        frame.onerror = () => reject(new Error("跨域 frame 加载失败"));
+        document.body.append(frame);
+      }),
+    `${cdnOrigin}/cross-frame`
+  );
+
   const liveSession = await send(permissionPage, {
     type: "START_LIVE_MONITOR",
     payload: { tabId, origin: server.origin }
   });
   await fixturePage.locator("#load-audio").click();
   await fixturePage.locator("#load-api").click();
+  await fixturePage.evaluate(
+    (url) => fetch(url).then((response) => response.arrayBuffer()),
+    `${cdnOrigin}/api/cross-origin`
+  );
   const liveRows = await eventually(
     () => databaseRows(worker),
     (rows) =>
@@ -429,6 +441,19 @@ try {
           file.sessionId === liveSession.id &&
           file.filename === "report fixture.txt" &&
           file.sources.includes("NETWORK_HEADER")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.filename === "cross-origin-resource.bin" &&
+          file.sources.includes("NETWORK_HEADER")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.canonicalUrl === `${cdnOrigin}/files/frame-video.mp4` &&
+          file.parentUrl === `${cdnOrigin}/cross-frame` &&
+          file.isExternal === true
       )
   );
   const apiFile = liveRows.files.find(
@@ -458,6 +483,12 @@ try {
   const recursivePage = await context.newPage();
   watchPage(recursivePage, "recursive");
   await recursivePage.goto(recursiveOrigin, { waitUntil: "domcontentloaded" });
+  await recursivePage.evaluate(() => {
+    const link = document.createElement("a");
+    link.href = "/spa-only.html";
+    link.textContent = "SPA 运行时页面";
+    document.body.append(link);
+  });
   const recursiveTabId = await worker.evaluate(
     async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id
   );
@@ -515,11 +546,14 @@ try {
     (file) => file.sessionId === recursiveSession.id
   );
   if (
-    completedRecursive?.pagesProcessed !== 3 ||
+    !completedRecursive ||
+    completedRecursive.pagesProcessed < 5 ||
     !completedRecursive.currentUrl ||
     !completedRecursive.requestsPerMinute ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/archive.zip")) ||
-    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/sample.txt"))
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/sample.txt")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/sitemap-only.json")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/spa-only.csv"))
   ) {
     throw new Error(
       `递归扫描链路不完整：${JSON.stringify({ completedRecursive, files: recursiveFiles.length })}`
@@ -599,7 +633,7 @@ try {
     () => currentSite.getAttribute("title"),
     (title) => title === fixturePage.url()
   );
-  for (const name of ["扫描当前页面", "开始实时监听", "同域递归扫描"]) {
+  for (const name of ["扫描当前页面", "开始完整嗅探", "同域递归扫描"]) {
     if (await sidepanelPage.getByRole("button", { name: new RegExp(name) }).isDisabled()) {
       throw new Error(`普通网页扫描入口被意外禁用：${name}`);
     }
@@ -658,6 +692,9 @@ try {
   await assertResultCardControls(sidepanelPage, extremeFilename);
   await assertLastResultUnobscured(sidepanelPage);
 
+  await sidepanelPage
+    .getByRole("textbox", { name: "搜索文件名或 URL" })
+    .fill(downloadableFile.filename);
   await sidepanelPage
     .locator(".result-card")
     .filter({
@@ -802,14 +839,16 @@ try {
   if (browserErrors.length) throw new Error(`浏览器页面错误：\n${browserErrors.join("\n")}`);
 
   console.log(`Edge MV3 加载通过：${extensionOrigin}`);
-  console.log("侧栏独立打开时可识别未授权普通网页，内容访问仍保持按站点授权");
+  console.log("侧栏独立打开时可识别普通 HTTP/HTTPS 网页");
   console.log(`当前页扫描通过：${currentFiles.length} 个候选`);
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
+  console.log("第三方 CDN 响应与跨域 frame 资源嗅探通过");
   console.log("同源导航监听重注入通过");
   console.log(
     `同源 BFS 递归扫描通过：${completedRecursive.pagesProcessed} 页，${recursiveFiles.length} 个候选`
   );
+  console.log("Sitemap Index、raw gzip 隐藏页面、拒绝 HEAD 页面与 SPA 运行时路由抓取通过");
   console.log(
     `递归实时进度通过：${runningProgress.currentUrl}，${runningProgress.requestsPerMinute} 次/分钟`
   );

@@ -8,6 +8,6 @@
 - `webRequest`：观察当前标签页的文件资源请求和响应头，不阻断、不修改请求。
 - `sidePanel`：显示扫描、结果、下载、历史与设置主界面。
 - `alarms`：按时停止实时监听并辅助后台任务生命周期。
-- `optional host permissions`：仅在用户启动扫描、监听或递归任务时访问当前指定网站，可随时撤销。
+- `optional host permissions`：当前页与递归任务按站点请求；完整嗅探由用户主动启动时请求 HTTP/HTTPS 全站范围，以观察当前标签页第三方请求的目标与发起页。两类权限都可在设置中撤销。
 
 扩展不申请 cookies、history、debugger、proxy、management、nativeMessaging、browsingData、webRequestBlocking 或 declarativeNetRequest。

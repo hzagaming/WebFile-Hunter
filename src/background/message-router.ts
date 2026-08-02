@@ -19,7 +19,14 @@ import { pauseCrawler, resumeCrawler, startCrawler } from "./crawler-engine";
 import type { DownloadManager } from "./download-manager";
 import { probeUrlMetadata } from "./metadata-probe";
 import { handlePageScanResult, injectPageScanner } from "./page-scanner";
-import { getGrantedOrigins, hasOriginPermission, revokeOrigin } from "./permission-manager";
+import {
+  ALL_SITES_ORIGINS,
+  getGrantedOrigins,
+  hasAllSitesPermission,
+  hasOriginPermission,
+  revokeAllSitesPermission,
+  revokeOrigin
+} from "./permission-manager";
 import {
   clearScanHistory,
   deleteScanSession,
@@ -92,6 +99,7 @@ async function snapshot(
     files: activeSession ? await listFiles(activeSession.id) : [],
     downloads: await downloads.getSnapshot(),
     settings: await getSettings(),
+    allSitesAccess: await hasAllSitesPermission(),
     incompleteSessions: await incompleteSessions()
   };
 }
@@ -132,6 +140,9 @@ export class MessageRouter {
         return this.#downloads.getSnapshot();
       case "SCAN_CURRENT_PAGE": {
         const tab = await getTab(message.payload.tabId);
+        if (!(await hasOriginPermission(tab.url ?? ""))) {
+          throw new TypeError("当前网站权限尚未授予。");
+        }
         const session = await createSession(tab, "current_page");
         try {
           await chrome.alarms.create(`scan:${session.id}`, { when: Date.now() + 30_000 });
@@ -147,8 +158,9 @@ export class MessageRouter {
         const tabUrl = new URL(tab.url ?? "");
         if (tabUrl.origin !== message.payload.origin)
           throw new TypeError("标签页 origin 已发生变化，请重试。");
-        if (!(await hasOriginPermission(tabUrl.href)))
-          throw new TypeError("当前网站权限尚未授予。");
+        if (!(await hasAllSitesPermission())) {
+          throw new TypeError("完整嗅探需要 HTTP 与 HTTPS 全站可选权限。");
+        }
         const settings = await getSettings();
         const session = await createSession(tab, "live_monitor");
         try {
@@ -179,6 +191,7 @@ export class MessageRouter {
           clampScanConfig(message.payload.config)
         );
         startCrawler(session);
+        await injectPageScanner(session.id, session.tabId).catch(() => undefined);
         return session;
       }
       case "CONTENT_SCAN_RESULT":
@@ -213,11 +226,13 @@ export class MessageRouter {
         ) {
           throw new TypeError("文件或扫描任务无效。");
         }
-        if (new URL(file.canonicalUrl).origin !== session.origin)
-          throw new TypeError("外域资源需要单独授权后才能探测。");
+        const resourceOrigin = new URL(file.canonicalUrl).origin;
+        if (resourceOrigin !== session.origin && !(await hasOriginPermission(file.canonicalUrl))) {
+          throw new TypeError("第三方资源需要完整嗅探或对应网站权限后才能探测。");
+        }
         const controller = new AbortController();
         const metadata = await probeUrlMetadata(file.canonicalUrl, {
-          origin: session.origin,
+          origin: resourceOrigin,
           config: session.config,
           signal: controller.signal
         });
@@ -273,6 +288,11 @@ export class MessageRouter {
         return message.payload.settings;
       case "GET_GRANTED_ORIGINS":
         return getGrantedOrigins();
+      case "REVOKE_ALL_SITES": {
+        const removed = await revokeAllSitesPermission();
+        if (removed) await stopSessionsForRemovedOrigins(ALL_SITES_ORIGINS);
+        return removed;
+      }
       case "REVOKE_ORIGIN": {
         const removed = await revokeOrigin(message.payload.originPattern);
         if (removed) await stopSessionsForRemovedOrigins([message.payload.originPattern]);

@@ -31,7 +31,9 @@ export function App() {
           <h1>WebFile Hunter</h1>
           <p title={state.snapshot?.activeTab?.url}>当前网站：{host}</p>
         </div>
-        <span className="permission-chip">按站点授权</span>
+        <span className="permission-chip">
+          {state.snapshot?.allSitesAccess ? "完整嗅探已授权" : "按站点授权"}
+        </span>
       </header>
 
       {state.error ? (

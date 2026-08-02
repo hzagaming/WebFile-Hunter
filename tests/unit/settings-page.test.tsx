@@ -72,6 +72,20 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("将全站权限聚合为完整嗅探状态并支持一键撤销", async () => {
+    const user = userEvent.setup();
+    mocks.sendMessage.mockImplementation((message: { type: string }) =>
+      Promise.resolve(message.type === "GET_GRANTED_ORIGINS" ? ["http://*/*", "https://*/*"] : true)
+    );
+    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+
+    expect(await screen.findByText("完整跨域嗅探已启用")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "撤销完整权限" }));
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith({ type: "REVOKE_ALL_SITES" });
+    expect(await screen.findByRole("status")).toHaveTextContent("完整嗅探权限已撤销");
+  });
+
   it("清除全部数据后恢复界面默认设置", async () => {
     const user = userEvent.setup();
     render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);

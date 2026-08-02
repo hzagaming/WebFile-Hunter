@@ -41,6 +41,55 @@ describe("scanDocument", () => {
     expect(result.resources.some((item) => item.url.endsWith("shown.txt"))).toBe(true);
   });
 
+  it("发现视频封面、SVG 图片与延迟媒体属性", () => {
+    document.body.innerHTML = `
+      <video poster="/poster.webp"></video>
+      <svg><image href="/sprite.svg"></image></svg>
+      <div data-poster="/lazy-cover.avif"></div>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const urls = scanDocument({ includeStylesheets: false }).resources.map((item) => item.url);
+
+    expect(urls).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/poster.webp`,
+        `${location.origin}/sprite.svg`,
+        `${location.origin}/lazy-cover.avif`
+      ])
+    );
+  });
+
+  it("只保留资源 link 并从资源元信息提取相对 URL", () => {
+    document.head.innerHTML = `
+      <link rel="canonical" href="/article">
+      <link rel="preconnect" href="https://cdn.test">
+      <link rel="stylesheet" href="/site.css">
+      <link rel="next" href="/page-2">
+      <meta property="og:url" content="https://example.test/article">
+      <meta property="og:image" content="">
+      <meta property="og:image" content="/cover.webp">
+      <meta name="twitter:player:stream" content="/video.mp4">
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+    const resources = result.resources.map((item) => item.url);
+
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/site.css`,
+        `${location.origin}/cover.webp`,
+        `${location.origin}/video.mp4`
+      ])
+    );
+    expect(resources).not.toEqual(
+      expect.arrayContaining([`${location.origin}/article`, "https://cdn.test/"])
+    );
+    expect(resources).not.toContain(location.href);
+    expect(result.pages.map((item) => item.url)).toContain(`${location.origin}/page-2`);
+  });
+
   it("保留页面内 blob 临时媒体资源供安全标记", () => {
     document.body.innerHTML = '<audio src="blob:http://localhost/temporary-audio"></audio>';
     vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);

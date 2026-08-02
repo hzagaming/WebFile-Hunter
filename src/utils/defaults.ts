@@ -1,7 +1,6 @@
 import type { AppSettings, ScanConfig } from "@/types/models";
 
 export const DEFAULT_SCAN_CONFIG: ScanConfig = {
-  sameOriginOnly: true,
   respectRobots: true,
   maxDepth: 2,
   maxPages: 200,
@@ -13,7 +12,6 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
   followRedirects: true,
   maxRedirects: 5,
   retries: 2,
-  excludeLogout: true,
   excludeDangerousActions: true
 };
 
@@ -43,8 +41,10 @@ function boundedInteger(value: number | undefined, fallback: number, min: number
 
 export function clampScanConfig(input: Partial<ScanConfig>): ScanConfig {
   return {
-    ...DEFAULT_SCAN_CONFIG,
-    ...input,
+    respectRobots:
+      typeof input.respectRobots === "boolean"
+        ? input.respectRobots
+        : DEFAULT_SCAN_CONFIG.respectRobots,
     maxDepth: boundedInteger(input.maxDepth, DEFAULT_SCAN_CONFIG.maxDepth, 0, 5),
     maxPages: boundedInteger(input.maxPages, DEFAULT_SCAN_CONFIG.maxPages, 1, 2000),
     maxConcurrency: boundedInteger(input.maxConcurrency, DEFAULT_SCAN_CONFIG.maxConcurrency, 1, 6),
@@ -61,8 +61,20 @@ export function clampScanConfig(input: Partial<ScanConfig>): ScanConfig {
       1024,
       5 * 1024 * 1024
     ),
+    probeMetadata:
+      typeof input.probeMetadata === "boolean"
+        ? input.probeMetadata
+        : DEFAULT_SCAN_CONFIG.probeMetadata,
+    followRedirects:
+      typeof input.followRedirects === "boolean"
+        ? input.followRedirects
+        : DEFAULT_SCAN_CONFIG.followRedirects,
     maxRedirects: boundedInteger(input.maxRedirects, DEFAULT_SCAN_CONFIG.maxRedirects, 0, 5),
-    retries: boundedInteger(input.retries, DEFAULT_SCAN_CONFIG.retries, 0, 3)
+    retries: boundedInteger(input.retries, DEFAULT_SCAN_CONFIG.retries, 0, 3),
+    excludeDangerousActions:
+      typeof input.excludeDangerousActions === "boolean"
+        ? input.excludeDangerousActions
+        : DEFAULT_SCAN_CONFIG.excludeDangerousActions
   };
 }
 

@@ -1,13 +1,15 @@
-export function originPattern(rawUrl: string): string {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new TypeError("当前页面不是可授权的 HTTP(S) 页面。");
-  }
-  return `${url.protocol}//${url.hostname}/*`;
-}
+import { ALL_SITES_ORIGINS, isAllSitesOrigin, siteOriginPattern } from "@/core/host-permissions";
+
+export { ALL_SITES_ORIGINS, isAllSitesOrigin };
+
+export const originPattern = siteOriginPattern;
 
 export async function hasOriginPermission(rawUrl: string): Promise<boolean> {
   return chrome.permissions.contains({ origins: [originPattern(rawUrl)] });
+}
+
+export async function hasAllSitesPermission(): Promise<boolean> {
+  return chrome.permissions.contains({ origins: ALL_SITES_ORIGINS });
 }
 
 export async function getGrantedOrigins(): Promise<string[]> {
@@ -18,4 +20,10 @@ export async function getGrantedOrigins(): Promise<string[]> {
 export async function revokeOrigin(pattern: string): Promise<boolean> {
   if (!/^https?:\/\/[^/]+\/\*$/.test(pattern)) throw new TypeError("授权地址格式无效。");
   return chrome.permissions.remove({ origins: [pattern] });
+}
+
+export async function revokeAllSitesPermission(): Promise<boolean> {
+  const granted = (await chrome.permissions.getAll()).origins ?? [];
+  const origins = ALL_SITES_ORIGINS.filter((origin) => granted.includes(origin));
+  return origins.length ? chrome.permissions.remove({ origins }) : false;
 }

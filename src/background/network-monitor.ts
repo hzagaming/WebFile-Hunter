@@ -1,6 +1,6 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
-import { categoryFromMime, isHtmlMime, normalizeMimeType } from "@/core/mime-map";
+import { isHtmlMime, normalizeMimeType } from "@/core/mime-map";
 import { getSession, listFiles, putFiles } from "@/database/db";
 import { getSettings } from "@/database/settings";
 import { broadcast } from "./broadcast";
@@ -12,7 +12,6 @@ interface PendingRequest {
   url: string;
   method: string;
   type: string;
-  sourcePageUrl?: string;
   statusCode?: number;
   finalUrl?: string;
   mimeType?: string;
@@ -63,8 +62,7 @@ export class NetworkMonitor {
       tabId: details.tabId,
       url: details.url,
       method: details.method,
-      type: details.type,
-      ...(details.initiator ? { sourcePageUrl: details.initiator } : {})
+      type: details.type
     };
     this.#requests.set(details.requestId, request);
     if (looksLikeFileUrl(details.url)) {
@@ -76,12 +74,12 @@ export class NetworkMonitor {
   readonly #headersReceived = (
     details: chrome.webRequest.OnHeadersReceivedDetails
   ): chrome.webRequest.BlockingResponse | undefined => {
-    if (details.tabId < 0) return undefined;
+    if (details.tabId < 0 || details.method !== "GET") return undefined;
     const request: PendingRequest = this.#requests.get(details.requestId) ?? {
       requestId: details.requestId,
       tabId: details.tabId,
       url: details.url,
-      method: "GET",
+      method: details.method,
       type: details.type
     };
     const headers = headersMap(details.responseHeaders);
@@ -102,8 +100,10 @@ export class NetworkMonitor {
     const isCandidate =
       looksLikeFileUrl(request.url) ||
       Boolean(request.contentDisposition) ||
-      (Boolean(categoryFromMime(request.mimeType)) && !isHtmlMime(request.mimeType)) ||
-      request.mimeType === "application/octet-stream";
+      (Boolean(request.mimeType) &&
+        !isHtmlMime(request.mimeType) &&
+        request.type !== "main_frame" &&
+        request.type !== "sub_frame");
     if (isCandidate) void this.#persist(request, "NETWORK_HEADER").catch(() => undefined);
     return undefined;
   };
@@ -129,19 +129,13 @@ export class NetworkMonitor {
     if (!sessionId) return;
     const session = await getSession(sessionId);
     if (!session || session.status !== "running" || session.tabId !== request.tabId) return;
-    const sourcePageUrl = request.sourcePageUrl ?? session.startUrl;
-    try {
-      if (new URL(sourcePageUrl).origin !== session.origin) return;
-    } catch {
-      return;
-    }
     const settings = await getSettings();
     let candidate;
     try {
       candidate = createFileCandidate({
         url: request.url,
         source,
-        sourcePageUrl,
+        sourcePageUrl: session.startUrl,
         tabId: request.tabId,
         requestId: request.requestId,
         requestType: request.type,

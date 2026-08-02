@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
+import { ALL_SITES_ORIGINS } from "@/core/host-permissions";
 import { clampScanConfig } from "@/utils/defaults";
 import { FeedbackNotice } from "../components/FeedbackNotice";
 import { StatusBadge } from "../components/StatusBadge";
@@ -15,6 +16,10 @@ interface Props {
 async function requestSitePermission(url: string): Promise<boolean> {
   const parsed = new URL(url);
   return chrome.permissions.request({ origins: [`${parsed.protocol}//${parsed.hostname}/*`] });
+}
+
+async function requestAllSitesPermission(): Promise<boolean> {
+  return chrome.permissions.request({ origins: ALL_SITES_ORIGINS });
 }
 
 function elapsed(session: ScanSession): string {
@@ -47,8 +52,16 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
     setWorking(mode);
     setLocalError(undefined);
     try {
-      if (!(await requestSitePermission(tab.url))) {
-        throw new Error("未授予当前网站权限，任务没有启动。插件不会重复弹出授权窗口。");
+      const granted =
+        mode === "monitor"
+          ? await requestAllSitesPermission()
+          : await requestSitePermission(tab.url);
+      if (!granted) {
+        throw new Error(
+          mode === "monitor"
+            ? "未授予完整嗅探权限，任务没有启动。可改用当前页或同域扫描。"
+            : "未授予当前网站权限，任务没有启动。插件不会重复弹出授权窗口。"
+        );
       }
       const created =
         mode === "current"
@@ -104,7 +117,8 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         {session ? <StatusBadge status={session.status} /> : null}
       </div>
       <p className="section-copy">
-        首次扫描站点时会请求访问权限。结果只保存在本地，不会自动下载、提交表单或进入外域页面。
+        当前页与递归扫描按站点授权；完整嗅探会单独请求 HTTP/HTTPS 全站权限，但只记录当前标签页。
+        结果只保存在本地，不会自动下载或提交表单。
       </p>
       {localError ? (
         <div className="notice notice-error" role="alert">
@@ -113,6 +127,13 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
       ) : null}
       {!canScan ? (
         <FeedbackNotice kind="info">当前页面不支持扫描，仅支持 HTTP 或 HTTPS 网页。</FeedbackNotice>
+      ) : null}
+      {canScan ? (
+        <FeedbackNotice kind={snapshot.allSitesAccess ? "success" : "info"}>
+          {snapshot.allSitesAccess
+            ? "完整跨域嗅探已启用：可识别第三方 CDN、媒体、接口响应与跨域 frame 资源。"
+            : "完整嗅探首次启动时会显示全站权限确认；可随时在设置中一键撤销。"}
+        </FeedbackNotice>
       ) : null}
 
       <div className="scan-actions">
@@ -136,9 +157,10 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         >
           <span className="action-icon">◉</span>
           <span>
-            <strong>开始实时监听</strong>
+            <strong>开始完整嗅探</strong>
             <small>
-              仅观察当前标签页后续请求，持续 {snapshot.settings.monitorDurationSeconds} 秒
+              覆盖当前标签页的同站与第三方后续请求，持续 {snapshot.settings.monitorDurationSeconds}{" "}
+              秒
             </small>
           </span>
         </button>
@@ -151,7 +173,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           <span className="action-icon">⌘</span>
           <span>
             <strong>同域递归扫描</strong>
-            <small>授权后按 BFS 扫描同源公开页面</small>
+            <small>结合页面链接、Sitemap 与当前 SPA DOM 扫描同源公开页面</small>
           </span>
         </button>
       </div>

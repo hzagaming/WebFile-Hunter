@@ -13,11 +13,14 @@ const mocks = vi.hoisted(() => ({
   listFiles: vi.fn(),
   patchSession: vi.fn(),
   persistCrawlerCheckpoint: vi.fn(),
+  fetchWithRetries:
+    vi.fn<(url: string, init: RequestInit, options: SafeFetchOptions) => Promise<Response>>(),
   probeUrlMetadata: vi.fn(),
   putAppError: vi.fn(),
   putFiles: vi.fn(),
   readLimitedText: vi.fn(),
-  safeFetch: vi.fn()
+  safeFetch:
+    vi.fn<(url: string, init: RequestInit, options: SafeFetchOptions) => Promise<Response>>()
 }));
 
 vi.mock("@/database/db", () => ({
@@ -39,6 +42,15 @@ vi.mock("@/background/permission-manager", () => ({
   hasOriginPermission: mocks.hasOriginPermission
 }));
 vi.mock("@/background/metadata-probe", () => ({
+  fetchWithRetries: mocks.fetchWithRetries,
+  metadataFromResponse: (url: string, response: Response) => ({
+    originalUrl: url,
+    finalUrl: response.url || url,
+    status: response.status,
+    ...(response.headers.get("content-type")
+      ? { mimeType: response.headers.get("content-type") ?? undefined }
+      : {})
+  }),
   probeUrlMetadata: mocks.probeUrlMetadata,
   readLimitedText: mocks.readLimitedText,
   safeFetch: mocks.safeFetch
@@ -48,7 +60,12 @@ vi.mock("@/background/session-manager", () => ({
   patchSession: mocks.patchSession
 }));
 
-import { pauseCrawler, resumeCrawler, startCrawler } from "@/background/crawler-engine";
+import {
+  enqueueCrawlerPages,
+  pauseCrawler,
+  resumeCrawler,
+  startCrawler
+} from "@/background/crawler-engine";
 
 const recursive = scanSession({
   id: "session-recursive",
@@ -70,6 +87,7 @@ beforeEach(() => {
   mocks.getCheckpoint.mockResolvedValue(checkpoint);
   mocks.hasOriginPermission.mockResolvedValue(true);
   mocks.listFiles.mockResolvedValue([]);
+  mocks.putFiles.mockResolvedValue([]);
   mocks.probeUrlMetadata.mockImplementation(
     (url: string, options: SafeFetchOptions): Promise<ResourceMetadata> => {
       options.onRequestStart?.(url);
@@ -86,6 +104,9 @@ beforeEach(() => {
       options.onRequestStart?.(url);
       return Promise.resolve(new Response("<title>完成</title>", { status: 200 }));
     }
+  );
+  mocks.fetchWithRetries.mockImplementation((url, init, options) =>
+    mocks.safeFetch(url, init, options)
   );
   mocks.readLimitedText.mockResolvedValue("<title>完成</title>");
   mocks.patchSession.mockImplementation((_id, patch) =>
@@ -106,6 +127,35 @@ describe("crawler engine lifecycle", () => {
     expect(mocks.patchSession).toHaveBeenCalledWith(recursive.id, {
       errorMessage: "CHECKPOINT_FAILED"
     });
+  });
+
+  it("把当前 DOM 中的同源安全页面加入正在运行的队列", async () => {
+    let releaseCheckpoint: (() => void) | undefined;
+    mocks.persistCrawlerCheckpoint.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (releaseCheckpoint = resolve))
+    );
+    const running = {
+      ...recursive,
+      status: "running" as const,
+      startUrl: "https://example.test/start"
+    };
+    startCrawler(running);
+    await vi.waitFor(() => expect(mocks.persistCrawlerCheckpoint).toHaveBeenCalledTimes(1));
+
+    const added = enqueueCrawlerPages(running, running.startUrl, [
+      { url: "https://example.test/spa-route", tagName: "a", noFollow: false },
+      { url: "https://outside.test/page", tagName: "a", noFollow: false },
+      { url: "https://example.test/logout", tagName: "a", noFollow: false }
+    ]);
+
+    expect(added).toBe(1);
+    releaseCheckpoint?.();
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(
+      "https://example.test/spa-route"
+    );
   });
 
   it("只允许暂停状态的递归任务恢复", async () => {
@@ -165,7 +215,7 @@ describe("crawler engine lifecycle", () => {
       recursive.id,
       expect.objectContaining({
         currentUrl: "https://example.test/start",
-        requestsPerMinute: 2
+        requestsPerMinute: 1
       })
     );
     expect(
@@ -177,6 +227,153 @@ describe("crawler engine lifecycle", () => {
           event.payload.requestsPerMinute === 1
       )
     ).toBe(true);
+  });
+
+  it("抓取 HTML 页面直接使用 GET，不依赖容易被拦截的 HEAD", async () => {
+    mocks.probeUrlMetadata.mockRejectedValue(new Error("HEAD_BLOCKED"));
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(
+          new Response("<title>直接抓取</title>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" }
+          })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.probeUrlMetadata).not.toHaveBeenCalled();
+    expect(mocks.safeFetch).toHaveBeenCalledWith(
+      "https://example.test/start",
+      { method: "GET" },
+      expect.any(Object)
+    );
+  });
+
+  it("从 robots.txt 的 Sitemap 补充页面种子", async () => {
+    const startUrl = "https://example.test/start";
+    const hiddenUrl = "https://example.test/hidden";
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        if (url.endsWith("/robots.txt")) {
+          return Promise.resolve(
+            new Response("User-agent: *\nSitemap: /sitemap.xml", { status: 200 })
+          );
+        }
+        if (url.endsWith("/sitemap.xml")) {
+          return Promise.resolve(
+            new Response(`<urlset><url><loc>${hiddenUrl}</loc></url></urlset>`, { status: 200 })
+          );
+        }
+        return Promise.resolve(
+          new Response("<title>页面</title>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" }
+          })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl,
+      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(hiddenUrl);
+    expect(mocks.fetchWithRetries).toHaveBeenCalledWith(
+      "https://example.test/robots.txt",
+      { method: "GET" },
+      expect.any(Object)
+    );
+    expect(mocks.fetchWithRetries).toHaveBeenCalledWith(
+      "https://example.test/sitemap.xml",
+      { method: "GET" },
+      expect.any(Object)
+    );
+    expect(mocks.patchSession).toHaveBeenCalledWith(
+      recursive.id,
+      expect.objectContaining({ pagesProcessed: 2 })
+    );
+  });
+
+  it("所有页面都抓取失败时返回失败终态而非空完成", async () => {
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() => expect(mocks.finishSession).toHaveBeenCalled());
+    expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "failed");
+    expect(mocks.finishSession).not.toHaveBeenCalledWith(recursive.id, "completed");
+  });
+
+  it("恢复任务会保留暂停前已经成功处理的页面", async () => {
+    const resumed = {
+      ...recursive,
+      status: "paused" as const,
+      pagesProcessed: 1,
+      errors: 0,
+      config: { ...recursive.config, minDelayMs: 0 }
+    };
+    mocks.getSession.mockResolvedValue(resumed);
+    mocks.getCheckpoint.mockResolvedValue({
+      sessionId: resumed.id,
+      savedAt: 1,
+      queue: [
+        {
+          id: "queued-page",
+          sessionId: resumed.id,
+          order: 0,
+          url: "https://example.test/remaining",
+          depth: 1,
+          parentUrl: resumed.startUrl,
+          discoveredAt: 1
+        }
+      ],
+      visitedUrls: [resumed.startUrl]
+    });
+    mocks.patchSession.mockImplementation((_id, patch) =>
+      Promise.resolve({ ...resumed, ...patch })
+    );
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(new Response(null, { status: 403 }));
+      }
+    );
+
+    await resumeCrawler(resumed.id);
+
+    await vi.waitFor(() => expect(mocks.finishSession).toHaveBeenCalled());
+    expect(mocks.finishSession).toHaveBeenCalledWith(resumed.id, "completed");
+    expect(mocks.finishSession).not.toHaveBeenCalledWith(resumed.id, "failed");
   });
 
   it("保存进度前淘汰一分钟外的请求记录", async () => {

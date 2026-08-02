@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
+import { ALL_SITES_ORIGINS, isAllSitesOrigin } from "@/core/host-permissions";
 import { clampAppSettings, DEFAULT_SETTINGS } from "@/utils/defaults";
 import type { AppSettings, FileCategory } from "@/types/models";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
@@ -47,6 +48,9 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
   const [settingsDraft, setSettings] = useState<AppSettings>();
   const settings = settingsDraft ?? snapshot.settings;
   const [origins, setOrigins] = useState<string[]>([]);
+  const broadOrigins = origins.filter(isAllSitesOrigin);
+  const siteOrigins = origins.filter((origin) => !isAllSitesOrigin(origin));
+  const fullAccess = ALL_SITES_ORIGINS.every((origin) => origins.includes(origin));
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [working, setWorking] = useState(false);
   const [customExtensionsDraft, setCustomExtensions] = useState<string>();
@@ -106,6 +110,22 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
       setFeedback({ kind: "success", text: "网站权限已撤销，对应进行中任务已安全停止。" });
     } catch (error) {
       fail(error, "无法撤销网站权限。");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const revokeAllSites = async (): Promise<void> => {
+    if (!confirm("撤销完整跨域嗅探权限？进行中的实时嗅探会停止。")) return;
+    setWorking(true);
+    setFeedback(undefined);
+    try {
+      await sendMessage({ type: "REVOKE_ALL_SITES" });
+      setOrigins((current) => current.filter((origin) => !isAllSitesOrigin(origin)));
+      setFeedback({ kind: "success", text: "完整嗅探权限已撤销，实时嗅探已安全停止。" });
+      await refresh(snapshot.activeSession?.id);
+    } catch (error) {
+      fail(error, "无法撤销完整嗅探权限。");
     } finally {
       setWorking(false);
     }
@@ -438,10 +458,28 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         </div>
       </div>
       <div className="settings-group">
-        <h3>已授权网站</h3>
-        <p>权限只用于你主动启动的扫描、监听或递归任务，可随时撤销。</p>
+        <h3>资源访问权限</h3>
+        <p>权限只用于你主动启动的任务。完整嗅探仍只处理指定标签页，不读取浏览历史。</p>
+        {broadOrigins.length ? (
+          <div className={`permission-scope ${fullAccess ? "enabled" : "partial"}`}>
+            <div>
+              <strong>{fullAccess ? "完整跨域嗅探已启用" : "完整跨域嗅探权限不完整"}</strong>
+              <small>
+                {fullAccess
+                  ? "覆盖 HTTP/HTTPS 第三方 CDN、媒体与接口响应"
+                  : "当前权限不足以完整观察跨域资源，建议撤销后重新启用"}
+              </small>
+            </div>
+            <button type="button" disabled={working} onClick={() => void revokeAllSites()}>
+              撤销完整权限
+            </button>
+          </div>
+        ) : (
+          <p>完整跨域嗅探未启用，首次启动完整嗅探时会请求确认。</p>
+        )}
+        <h3 className="permission-subheading">已授权网站</h3>
         <div className="permission-list">
-          {origins.map((origin) => (
+          {siteOrigins.map((origin) => (
             <div key={origin}>
               <code>{origin}</code>
               <button type="button" disabled={working} onClick={() => void revoke(origin)}>
@@ -449,7 +487,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               </button>
             </div>
           ))}
-          {!origins.length ? <p>暂无持久网站权限。</p> : null}
+          {!siteOrigins.length ? <p>暂无单独网站权限。</p> : null}
         </div>
       </div>
       <div className="settings-group danger-zone">

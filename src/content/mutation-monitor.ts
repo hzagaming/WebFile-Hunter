@@ -17,6 +17,8 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "href",
       "src",
       "srcset",
+      "poster",
+      "xlink:href",
       "data-src",
       "data-url",
       "data-href",
@@ -24,6 +26,7 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "data-file",
       "data-audio",
       "data-video",
+      "data-poster",
       "data-original",
       "lazy-src",
       "style"

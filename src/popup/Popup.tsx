@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
+import { ALL_SITES_ORIGINS } from "@/core/host-permissions";
 import type { ScanSession } from "@/types/models";
 
 export function Popup() {
@@ -28,27 +29,26 @@ export function Popup() {
   })();
   const host = page?.host ?? "不可用";
 
-  const openPanel = (): void => {
-    if (tab?.id === undefined) return;
-    void chrome.sidePanel
-      .open({ tabId: tab.id })
-      .catch((value: unknown) =>
-        setError(value instanceof Error ? value.message : "无法打开侧边栏。")
-      );
+  const openPanel = async (): Promise<boolean> => {
+    if (tab?.id === undefined) return false;
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id });
+      return true;
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "无法打开侧边栏。");
+      return false;
+    }
   };
 
   const run = async (mode: "scan" | "monitor"): Promise<void> => {
     if (tab?.id === undefined || !page) return;
     setWorking(true);
     setError(undefined);
-    openPanel();
     try {
-      if (
-        !(await chrome.permissions.request({
-          origins: [`${page.protocol}//${page.hostname}/*`]
-        }))
-      ) {
-        throw new Error("未授予当前网站权限。");
+      const origins =
+        mode === "monitor" ? ALL_SITES_ORIGINS : [`${page.protocol}//${page.hostname}/*`];
+      if (!(await chrome.permissions.request({ origins }))) {
+        throw new Error(mode === "monitor" ? "未授予完整嗅探权限。" : "未授予当前网站权限。");
       }
       if (mode === "monitor") {
         const parsed = page;
@@ -60,7 +60,8 @@ export function Popup() {
       } else {
         await sendMessage<ScanSession>({ type: "SCAN_CURRENT_PAGE", payload: { tabId: tab.id } });
       }
-      window.close();
+      if (await openPanel()) window.close();
+      else setWorking(false);
     } catch (value) {
       setError(value instanceof Error ? value.message : "操作失败。");
       setWorking(false);
@@ -102,13 +103,13 @@ export function Popup() {
         disabled={working || !page}
         onClick={() => void run("monitor")}
       >
-        开始监听
+        完整实时嗅探
       </button>
       <button
         className="full ghost"
         type="button"
         disabled={tab?.id === undefined}
-        onClick={openPanel}
+        onClick={() => void openPanel()}
       >
         打开侧边栏
       </button>

@@ -25,7 +25,15 @@ describe("startContentMonitor", () => {
     const options = observe.mock.calls[0]?.[1] as MutationObserverInit;
 
     expect(options.attributeFilter).toEqual(
-      expect.arrayContaining(["data-audio", "data-video", "data-original", "lazy-src"])
+      expect.arrayContaining([
+        "poster",
+        "xlink:href",
+        "data-audio",
+        "data-video",
+        "data-poster",
+        "data-original",
+        "lazy-src"
+      ])
     );
     monitor.stop();
   });

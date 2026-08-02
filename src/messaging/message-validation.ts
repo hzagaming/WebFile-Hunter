@@ -4,7 +4,6 @@ const sessionId = z.string().min(3).max(128);
 const tabId = z.number().int().nonnegative();
 const scanConfig = z
   .object({
-    sameOriginOnly: z.boolean(),
     respectRobots: z.boolean(),
     maxDepth: z.number().int().min(0).max(5),
     maxPages: z.number().int().min(1).max(2000),
@@ -20,7 +19,6 @@ const scanConfig = z
     followRedirects: z.boolean(),
     maxRedirects: z.number().int().min(0).max(5),
     retries: z.number().int().min(0).max(3),
-    excludeLogout: z.boolean(),
     excludeDangerousActions: z.boolean()
   })
   .strict();
@@ -202,6 +200,7 @@ export const extensionRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("GET_SETTINGS") }).strict(),
   z.object({ type: z.literal("SAVE_SETTINGS"), payload: z.object({ settings }).strict() }).strict(),
   z.object({ type: z.literal("GET_GRANTED_ORIGINS") }).strict(),
+  z.object({ type: z.literal("REVOKE_ALL_SITES") }).strict(),
   z
     .object({
       type: z.literal("REVOKE_ORIGIN"),

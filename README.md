@@ -7,15 +7,15 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 ## 功能
 
 - 当前页面扫描：DOM 属性、`download`、`srcset`、内联/可访问样式表、Performance Resource Timing、可注入 iframe。
-- 实时资源监听：仅观察当前标签页，合并 `requestId` 对应的请求与响应头，识别无后缀下载接口，并在同源导航后按剩余时长继续监听。
-- 同源递归扫描：BFS、robots.txt、深度/页面/并发/速率硬限制、超时、重试、暂停、恢复和取消。
+- 完整实时嗅探：用户明确授权后，仅观察当前标签页的同站与第三方 CDN、媒体、接口及 frame 请求，合并 `requestId` 对应的请求与响应头，并在同源导航后按剩余时长继续监听。
+- 同源递归扫描：直接 GET 静态 HTML，结合页面链接、robots.txt 声明的 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度/页面/并发/速率硬限制、超时、重试、暂停、恢复和取消。
 - 文件识别：扩展名、MIME、Content-Disposition、标签上下文、查询参数、请求类型和响应大小综合评分。
-- 元数据探测：优先 HEAD，失败时使用 `Range: bytes=0-0`，不完整下载大文件。
+- 元数据探测：仅资源头信息优先 HEAD，服务器不支持 HEAD 时使用 `Range: bytes=0-0`，不完整下载大文件；HTML 页面抓取不依赖 HEAD，并按响应头、BOM 或 meta 声明解码字符集。
 - 结果管理：分类、扩展名、MIME、大小、来源、置信度、内外部、关键字和正则筛选；虚拟列表支持大量结果。
 - 本地导出：TXT、CSV（可带 UTF-8 BOM）、JSON。
 - 下载队列：用户手动开始、并发限制、取消、重试、打开文件、在文件夹中显示。
 - 本地历史与恢复：支持打开、单次导出、删除和清空扫描历史；清空时保留设置与下载记录。IndexedDB 检查点可供递归任务手动恢复。
-- 最小权限：只读取当前活动标签页上下文；页面内容权限按站点请求，设置页可逐项撤销。
+- 分级权限：当前页和递归扫描按站点授权；完整嗅探单独请求 HTTP/HTTPS 全站可选权限，设置页可一键撤销。
 
 ## 技术栈
 
@@ -65,7 +65,7 @@ npm run test:e2e
 npm run package
 ```
 
-`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。测试会确认未授权普通网页仍可被侧栏识别且没有获得内容权限；临时副本只为后续功能链路预授予本地测试站权限，生产 `dist/manifest.json` 仍使用可选主机权限。测试结束后删除临时浏览器配置。
+`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、跨域资源嗅探、Sitemap Index/raw gzip/SPA 递归、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
 
 脚本会自动探测 macOS、Windows 和 Linux 的常见 Edge 安装路径；非标准安装可设置 `EDGE_PATH`。
 
@@ -102,27 +102,27 @@ npm run build
 
 侧栏通过 `tabs` 识别所在窗口的当前网页，但这不会授予页面内容访问。用户点击后，扩展按当前站点请求可撤销的主机权限，再通过 `chrome.scripting` 扫描页面及浏览器允许访问的 frame；不会自动进入链接或下载文件。
 
-### 实时资源监听
+### 完整实时嗅探
 
-先请求当前站点权限，只记录当前 tab 的后续请求。响应头用于识别 `Content-Type`、`Content-Length`、`Content-Disposition`、`Accept-Ranges`、ETag、Last-Modified 和重定向地址。停止后立即移除内容观察器；浏览器重启后不恢复。
+用户点击后请求 HTTP 与 HTTPS 全站可选权限，以满足 MV3 对请求发起页和第三方目标 URL 的双重 Host 权限要求。扩展仍只记录用户启动任务的当前 tab，不观察其他标签页。响应头用于识别 `Content-Type`、`Content-Length`、`Content-Disposition`、`Accept-Ranges`、ETag、Last-Modified 和重定向地址；停止后立即移除内容观察器，浏览器重启后不恢复。
 
 ### 同源递归扫描
 
-先显示配置，再请求当前站点权限。爬虫只使用 GET/HEAD，只访问完全相同的 origin，子域名视为外域。外域文件链接可以记录，但不会被探测或继续访问。robots.txt 的 401/403 或超时会安全停止任务。
+先显示配置，再请求当前站点权限。后台使用 GET 读取静态 HTML，并从页面链接、robots.txt 的 Sitemap/Sitemap Index（支持 raw gzip）和启动时当前标签页已渲染的 SPA DOM 补充队列；资源元数据探测才会使用 HEAD。爬虫只访问完全相同的 origin，子域名视为外域；外域文件链接可以记录，但不会继续扩散，只有用户授予完整嗅探权限时才可探测其元数据。robots.txt 的 401/403 或重试后仍失败会安全停止任务。
 
 ## 权限说明
 
-| 权限         | 用途                                     |
-| ------------ | ---------------------------------------- |
-| `activeTab`  | 仅在用户操作后读取当前网页上下文         |
-| `tabs`       | 识别每个侧栏所在窗口的当前标签页 URL     |
-| `scripting`  | 注入本地打包的页面扫描脚本               |
-| `storage`    | 保存设置、小型运行状态和界面偏好         |
-| `downloads`  | 执行用户明确选择并手动开始的下载任务     |
-| `webRequest` | 观察当前标签页资源请求，不阻断或修改请求 |
-| `sidePanel`  | 显示主界面                               |
-| `alarms`     | 自动结束监听并辅助后台生命周期           |
-| 可选主机权限 | 仅在用户启动扫描任务时访问当前指定站点   |
+| 权限         | 用途                                               |
+| ------------ | -------------------------------------------------- |
+| `activeTab`  | 仅在用户操作后读取当前网页上下文                   |
+| `tabs`       | 识别每个侧栏所在窗口的当前标签页 URL               |
+| `scripting`  | 注入本地打包的页面扫描脚本                         |
+| `storage`    | 保存设置、小型运行状态和界面偏好                   |
+| `downloads`  | 执行用户明确选择并手动开始的下载任务               |
+| `webRequest` | 观察当前标签页资源请求，不阻断或修改请求           |
+| `sidePanel`  | 显示主界面                                         |
+| `alarms`     | 自动结束监听并辅助后台生命周期                     |
+| 可选主机权限 | 按站点扫描；完整嗅探时显式请求 HTTP/HTTPS 全站范围 |
 
 扩展不申请 cookies、history、debugger、proxy、nativeMessaging、webRequestBlocking 或 declarativeNetRequest。
 
@@ -133,14 +133,14 @@ npm run build
 - 默认阻止本机、私网、链路本地、URL 凭据、危险端口和登出/删除/支付类路径。
 - 所有跨上下文消息由 Zod 严格验证；网页不能发送任意 URL 触发后台 fetch。
 - 不读取密码字段、表单内容、Cookie、Authorization 或 Token。
-- 不执行网页 JavaScript，不点击按钮，不提交表单，不伪造 Referer。
+- 后台递归抓取不执行远端网页 JavaScript；只读取当前标签页已经渲染的 DOM，不点击按钮、不提交表单、不伪造 Referer。
 - m3u8、DASH、分片和 blob 只标记，不合并、不解密、不伪装成普通音频。
 
 更多信息见 [PRIVACY.md](PRIVACY.md) 和 [SECURITY.md](SECURITY.md)。
 
 ## 演示站
 
-`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、无后缀下载接口、重定向、慢响应、429、403 和 robots.txt。文件均为极小占位内容，不包含版权媒体。
+`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、无后缀下载接口、重定向、慢响应、429、403、robots.txt、Sitemap Index/raw gzip 隐藏页和 SPA 动态路由。文件均为极小占位内容，不包含版权媒体。
 
 ## 发布打包
 
@@ -154,18 +154,18 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.0.0.zip
+release/webfile-hunter-v1.1.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。
 
 ## 已知限制
 
-- 无法发现页面、HTML 或网络请求完全没有引用的隐藏文件，不执行目录爆破或文件名枚举。
+- 可从 Sitemap 和当前已渲染 DOM 补充页面，但无法发现二者及网络请求都未引用的隐藏文件；不执行目录爆破、文件名枚举或外域无限扩散。
 - 不破解登录、付费内容、验证码、防盗链、许可证或 DRM。
 - `blob:` URL 通常不是永久下载地址；m3u8 和 DASH 不是普通 MP3 直链。
-- 某些网站拒绝 HEAD，扩展只会尝试受限 Range GET，不绕过服务器限制。
-- 跨域 iframe 未授权时无法扫描；浏览器策略可能隐藏部分响应头。
+- HTML 页面直接使用 GET；资源元数据 HEAD 被明确标记为不支持时才尝试受限 Range GET，不绕过服务器限制。
+- 完整嗅探未授权时无法观察第三方目标响应头或跨域 iframe 内容；浏览器保护页始终无法扫描。
 - 签名 URL 会保留必要查询参数，但过期后仍可能失效。
 - Service Worker 被终止时，递归任务依赖最近检查点；实时监听不会跨浏览器重启恢复。
 - 当前版本不合并流媒体分片，也不在完整下载后计算 SHA-256。
@@ -174,7 +174,8 @@ ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备�
 
 - “仅支持 HTTP 或 HTTPS”：`edge://`、本地文件、扩展页和其他内部页面不能扫描。
 - “当前网站权限尚未授予”：回到扫描页重新点击对应扫描模式并确认该站点权限。
-- “网站拒绝 HEAD”：仍可复制链接或打开来源页；扩展不会伪造凭据绕过限制。
+- “完整嗅探需要全站权限”：重新点击“开始完整嗅探”并确认权限，或使用当前页/同域扫描；权限可在设置中一键撤销。
+- “资源元数据探测失败”：页面递归仍可继续；可复制链接或打开来源页，扩展不会伪造凭据绕过限制。
 - 侧边栏没有刷新：点击页面右上角“刷新”，或重新打开侧边栏；结果仍保存在 IndexedDB。
 - 扩展更新后异常：在 `edge://extensions` 点击“重新加载”，再检查 Service Worker 控制台。
 

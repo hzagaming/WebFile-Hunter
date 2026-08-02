@@ -196,4 +196,33 @@ describe("ResultsPage", () => {
 
     expect(list).toHaveStyle({ height: "610px" });
   });
+
+  it("完整权限允许探测已发现的外域资源元数据", async () => {
+    const user = userEvent.setup();
+    const session = scanSession({ filesDiscovered: 1 });
+    const external = fileCandidate("cdn", {
+      canonicalUrl: "https://cdn.test/resource",
+      originalUrl: "https://cdn.test/resource",
+      isExternal: true,
+      requiresPermission: true
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({
+          activeSession: session,
+          files: [external],
+          allSitesAccess: true
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "元数据" });
+    expect(button).toBeEnabled();
+    await user.click(button);
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: "PROBE_METADATA",
+      payload: { sessionId: session.id, candidateId: external.id }
+    });
+  });
 });
