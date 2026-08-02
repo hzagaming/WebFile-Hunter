@@ -26,7 +26,16 @@ describe("startContentMonitor", () => {
 
     expect(options.attributeFilter).toEqual(
       expect.arrayContaining([
+        "action",
+        "content",
+        "download",
+        "itemprop",
+        "method",
+        "name",
         "poster",
+        "property",
+        "rel",
+        "type",
         "xlink:href",
         "data-audio",
         "data-video",

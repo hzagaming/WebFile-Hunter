@@ -79,6 +79,15 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : icon);
       return;
     }
+    if (url.pathname === "/files/dynamic-og.webp") {
+      const icon = await readFile(resolve("public/icons/icon16.png"));
+      response.writeHead(200, {
+        "Content-Type": "image/webp",
+        "Content-Length": String(icon.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : icon);
+      return;
+    }
     if (url.pathname === "/files/pixel.png") {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {

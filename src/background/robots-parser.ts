@@ -30,7 +30,7 @@ export function parseRobotsTxt(text: string, userAgent = "*"): RobotsRules {
   const groups: RobotsGroup[] = [];
   const sitemaps: string[] = [];
   let current: RobotsGroup | undefined;
-  let hasRules = false;
+  let hasDirectives = false;
 
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.replace(/\s*#.*$/, "").trim();
@@ -40,10 +40,10 @@ export function parseRobotsTxt(text: string, userAgent = "*"): RobotsRules {
     const field = line.slice(0, separator).trim().toLowerCase();
     const value = line.slice(separator + 1).trim();
     if (field === "user-agent") {
-      if (!current || hasRules) {
+      if (!current || hasDirectives) {
         current = { agents: [], rules: [] };
         groups.push(current);
-        hasRules = false;
+        hasDirectives = false;
       }
       current.agents.push(value.toLowerCase());
       continue;
@@ -53,8 +53,8 @@ export function parseRobotsTxt(text: string, userAgent = "*"): RobotsRules {
       continue;
     }
     if (!current) continue;
+    hasDirectives = true;
     if (field === "allow" || field === "disallow") {
-      hasRules = true;
       if (value) current.rules.push({ allow: field === "allow", pattern: value });
     } else if (field === "crawl-delay") {
       const seconds = Number(value);

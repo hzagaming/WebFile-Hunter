@@ -1,5 +1,5 @@
 import { looksLikeFileUrl } from "@/core/file-classifier";
-import { linkTargetKind, metaResourceKind } from "@/core/html-resource-policy";
+import { linkTargetKind, metaResourceKind, robotsMetaNoFollow } from "@/core/html-resource-policy";
 import { normalizeUrl } from "@/core/url-normalizer";
 import type { PageCandidate, PageScanResult, RawResource } from "@/types/scanner";
 import { extractCssUrls, scanAccessibleStylesheets } from "./style-url-scanner";
@@ -69,6 +69,9 @@ export function scanDocument(
   const resources = new Map<string, RawResource>();
   const pages = new Map<string, PageCandidate>();
   const pageOrigin = location.origin;
+  const pageNoFollow = [
+    ...document.querySelectorAll<HTMLMetaElement>('meta[name="robots" i]')
+  ].some((meta) => robotsMetaNoFollow(meta.content));
 
   const addResource = (
     raw: string,
@@ -95,6 +98,7 @@ export function scanDocument(
   for (const [selector, attributeNames] of SELECTORS) {
     if (selector === "img" && options.includeImages === false) continue;
     for (const element of document.querySelectorAll(selector)) {
+      if (element instanceof HTMLFormElement && element.method.toLowerCase() !== "get") continue;
       for (const attribute of attributeNames) {
         const raw = element.getAttribute(attribute);
         if (!raw) continue;
@@ -107,7 +111,7 @@ export function scanDocument(
             if (looksLikeFileUrl(url) || kind === "resource") {
               addResource(value, element, attribute, "DOM_ATTRIBUTE");
             } else if (kind === "page" && pages.size < MAX_ITEMS && !pages.has(url)) {
-              pages.set(url, { url, tagName: "link", noFollow: false });
+              pages.set(url, { url, tagName: "link", noFollow: pageNoFollow });
             }
             continue;
           }
@@ -121,8 +125,9 @@ export function scanDocument(
               url,
               tagName: element.tagName.toLowerCase(),
               noFollow:
-                element.getAttribute("rel")?.toLowerCase().split(/\s+/).includes("nofollow") ??
-                false
+                pageNoFollow ||
+                (element.getAttribute("rel")?.toLowerCase().split(/\s+/).includes("nofollow") ??
+                  false)
             });
           }
         }

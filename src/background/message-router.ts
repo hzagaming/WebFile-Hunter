@@ -92,15 +92,25 @@ async function snapshot(
   const mappedSessionId =
     !sessionId && activeTab ? await activeSessionIdForTab(activeTab.id) : undefined;
   const activeSession = selectSnapshotSession(sessions, activeTab, sessionId, mappedSessionId);
+  const [files, downloadSnapshot, settings, allSitesAccess, grantedOrigins, incomplete] =
+    await Promise.all([
+      activeSession ? listFiles(activeSession.id) : Promise.resolve([]),
+      downloads.getSnapshot(),
+      getSettings(),
+      hasAllSitesPermission(),
+      getGrantedOrigins(),
+      incompleteSessions()
+    ]);
   return {
     ...(activeTab ? { activeTab } : {}),
     ...(activeSession ? { activeSession } : {}),
     sessions,
-    files: activeSession ? await listFiles(activeSession.id) : [],
-    downloads: await downloads.getSnapshot(),
-    settings: await getSettings(),
-    allSitesAccess: await hasAllSitesPermission(),
-    incompleteSessions: await incompleteSessions()
+    files,
+    downloads: downloadSnapshot,
+    settings,
+    allSitesAccess,
+    grantedOrigins,
+    incompleteSessions: incomplete
   };
 }
 

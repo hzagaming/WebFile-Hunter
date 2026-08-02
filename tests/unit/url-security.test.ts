@@ -9,13 +9,23 @@ describe("inspectUrlSafety", () => {
     "http://0.0.0.0/a",
     "http://169.254.1.2/a",
     "http://10.1.2.3/a",
+    "http://100.64.0.1/a",
     "http://172.20.1.2/a",
     "http://192.168.1.2/a",
+    "http://192.0.2.1/a",
+    "http://198.18.0.1/a",
+    "http://198.51.100.1/a",
+    "http://203.0.113.1/a",
+    "http://224.0.0.1/a",
+    "http://240.0.0.1/a",
+    "http://[::]/a",
     "http://[::1]/a",
     "http://[::ffff:127.0.0.1]/a",
     "http://[::ffff:10.1.2.3]/a",
     "http://[fc00::1]/a",
-    "http://[fe80::1]/a"
+    "http://[fe80::1]/a",
+    "http://[fec0::1]/a",
+    "http://[ff02::1]/a"
   ])("拒绝本地或私网地址 %s", (url) => {
     expect(inspectUrlSafety(url)).toMatchObject({ safe: false, code: "PRIVATE_NETWORK" });
   });

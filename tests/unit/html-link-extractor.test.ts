@@ -83,4 +83,35 @@ describe("extractLinksFromHtml", () => {
     ]);
     expect(result.pages.map((item) => item.url)).toContain("https://example.test/page-2");
   });
+
+  it("忽略非 GET 表单 action 但保留普通 GET 页面入口", () => {
+    const result = extractLinksFromHtml(
+      [
+        '<form method="post" action="/api/export.csv"></form>',
+        '<form action="/search"></form>',
+        '<form method="" action="/empty-method"></form>',
+        '<form method="invalid" action="/invalid-method"></form>'
+      ].join(""),
+      "https://example.test/article"
+    );
+
+    expect(result.resources.map((item) => item.url)).not.toContain(
+      "https://example.test/api/export.csv"
+    );
+    expect(result.pages.map((item) => item.url)).not.toContain(
+      "https://example.test/api/export.csv"
+    );
+    expect(result.pages.map((item) => item.url)).toContain("https://example.test/search");
+    expect(result.pages.map((item) => item.url)).toContain("https://example.test/empty-method");
+    expect(result.pages.map((item) => item.url)).toContain("https://example.test/invalid-method");
+  });
+
+  it("将 robots none 视为 nofollow", () => {
+    const result = extractLinksFromHtml(
+      '<meta name="robots" content="none"><a href="/private-page">页面</a>',
+      "https://example.test/article"
+    );
+
+    expect(result.noFollow).toBe(true);
+  });
 });

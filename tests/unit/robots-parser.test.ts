@@ -33,4 +33,17 @@ describe("parseRobotsTxt", () => {
     expect(parseRobotsTxt("User-agent: *\nDisallow:").isAllowed("https://e.test/a")).toBe(true);
     expect(parseRobotsTxt("").isAllowed("https://e.test/a")).toBe(true);
   });
+
+  it("Crawl-delay 后的新 User-agent 开始独立分组", () => {
+    const rules = parseRobotsTxt(`
+User-agent: *
+Crawl-delay: 1
+
+User-agent: BlockedBot
+Disallow: /
+`);
+
+    expect(rules.crawlDelayMs).toBe(1000);
+    expect(rules.isAllowed("https://example.com/public")).toBe(true);
+  });
 });

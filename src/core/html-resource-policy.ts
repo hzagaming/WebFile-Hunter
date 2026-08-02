@@ -53,3 +53,11 @@ export function metaResourceKind(values: {
   if (keys.some((key) => MEDIA_META_KEYS.has(key))) return "media";
   return undefined;
 }
+
+export function robotsMetaNoFollow(content: string): boolean {
+  const directives = content
+    .toLowerCase()
+    .split(/[,\s]+/)
+    .filter(Boolean);
+  return directives.includes("nofollow") || directives.includes("none");
+}

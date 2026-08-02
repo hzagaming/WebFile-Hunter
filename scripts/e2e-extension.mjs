@@ -422,6 +422,13 @@ try {
       }),
     `${cdnOrigin}/cross-frame`
   );
+  await fixturePage.evaluate(() => {
+    const meta = document.createElement("meta");
+    meta.id = "dynamic-og-image";
+    meta.setAttribute("property", "og:image");
+    meta.content = "";
+    document.head.append(meta);
+  });
 
   const liveSession = await send(permissionPage, {
     type: "START_LIVE_MONITOR",
@@ -429,6 +436,11 @@ try {
   });
   await fixturePage.locator("#load-audio").click();
   await fixturePage.locator("#load-api").click();
+  await fixturePage.evaluate(() => {
+    const meta = document.querySelector("#dynamic-og-image");
+    if (!(meta instanceof HTMLMetaElement)) throw new Error("动态 OG 元信息不存在");
+    meta.content = "/files/dynamic-og.webp";
+  });
   await fixturePage.evaluate(
     (url) => fetch(url).then((response) => response.arrayBuffer()),
     `${cdnOrigin}/api/cross-origin`
@@ -454,6 +466,12 @@ try {
           file.canonicalUrl === `${cdnOrigin}/files/frame-video.mp4` &&
           file.parentUrl === `${cdnOrigin}/cross-frame` &&
           file.isExternal === true
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.canonicalUrl === `${server.origin}/files/dynamic-og.webp` &&
+          file.sources.includes("DOM_ATTRIBUTE")
       )
   );
   const apiFile = liveRows.files.find(
@@ -844,6 +862,7 @@ try {
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
   console.log("第三方 CDN 响应与跨域 frame 资源嗅探通过");
+  console.log("SPA 既有 Open Graph 元信息动态更新嗅探通过");
   console.log("同源导航监听重注入通过");
   console.log(
     `同源 BFS 递归扫描通过：${completedRecursive.pagesProcessed} 页，${recursiveFiles.length} 个候选`

@@ -225,4 +225,26 @@ describe("ResultsPage", () => {
       payload: { sessionId: session.id, candidateId: external.id }
     });
   });
+
+  it("对应网站权限允许探测外域资源元数据", () => {
+    const session = scanSession({ filesDiscovered: 1 });
+    const external = fileCandidate("cdn-site", {
+      canonicalUrl: "https://cdn.test/resource",
+      originalUrl: "https://cdn.test/resource",
+      isExternal: true,
+      requiresPermission: true
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({
+          activeSession: session,
+          files: [external],
+          grantedOrigins: ["https://cdn.test/*"]
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "元数据" })).toBeEnabled();
+  });
 });

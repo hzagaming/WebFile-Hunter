@@ -58,6 +58,7 @@ export interface AppSnapshot {
   downloads: DownloadTask[];
   settings: AppSettings;
   allSitesAccess: boolean;
+  grantedOrigins: string[];
   incompleteSessions: ScanSession[];
 }
 

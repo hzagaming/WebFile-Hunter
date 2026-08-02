@@ -52,6 +52,7 @@ export function appSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
     downloads: [],
     settings: structuredClone(DEFAULT_SETTINGS),
     allSitesAccess: false,
+    grantedOrigins: [],
     incompleteSessions: [],
     ...overrides
   };

@@ -7,7 +7,7 @@ export function parseContentDispositionFilename(header?: string): string | undef
     try {
       return decodeURIComponent(value);
     } catch {
-      return undefined;
+      // 损坏的 filename* 不应覆盖仍可用的 filename。
     }
   }
   const plainMatches = [...header.matchAll(/(?:^|;)\s*filename\s*=\s*("(?:[^"\\]|\\.)*"|[^;]+)/gi)];

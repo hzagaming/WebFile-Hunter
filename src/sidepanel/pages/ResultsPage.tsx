@@ -5,6 +5,7 @@ import { exportCsv } from "@/export/export-csv";
 import { exportJson } from "@/export/export-json";
 import { exportTxt } from "@/export/export-txt";
 import { saveExport } from "@/export/save-export";
+import { siteOriginPattern } from "@/core/host-permissions";
 import { VirtualList } from "../components/VirtualList";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
 import type { DiscoverySource, DownloadTask, FileCandidate, FileCategory } from "@/types/models";
@@ -61,6 +62,19 @@ function canOpenResource(file: FileCandidate): boolean {
   if (file.warnings.includes("temporary_blob")) return false;
   try {
     return ["http:", "https:"].includes(new URL(file.finalUrl ?? file.canonicalUrl).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function canProbeResource(file: FileCandidate, snapshot: AppSnapshot): boolean {
+  if (!file.isExternal || snapshot.allSitesAccess) return true;
+  try {
+    const protocol = new URL(file.canonicalUrl).protocol;
+    return (
+      snapshot.grantedOrigins.includes(siteOriginPattern(file.canonicalUrl)) ||
+      snapshot.grantedOrigins.includes(`${protocol}//*/*`)
+    );
   } catch {
     return false;
   }
@@ -439,96 +453,105 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           height={Math.max(320, viewportHeight - 390)}
           endPadding={72}
           getKey={(file) => file.id}
-          renderItem={(file) => (
-            <article className={`result-card ${selected.has(file.id) ? "selected" : ""}`}>
-              <input
-                className="card-check"
-                type="checkbox"
-                aria-label={`选择 ${file.filename}`}
-                checked={selected.has(file.id)}
-                onChange={() => toggle(file.id)}
-              />
-              <div className={`file-type type-${file.category}`}>
-                {file.extension?.toUpperCase() ?? "?"}
-              </div>
-              <div className="result-body">
-                <h3 title={file.filename}>{file.filename}</h3>
-                <p className="url" title={file.canonicalUrl}>
-                  {file.canonicalUrl}
-                </p>
-                <div className="metadata">
-                  <span>{categoryLabels[file.category]}</span>
-                  <span>{formatSize(file.contentLength)}</span>
-                  <span>{file.mimeType ?? "MIME 未知"}</span>
-                  <span>置信度 {file.confidence}</span>
+          renderItem={(file) => {
+            const openable = canOpenResource(file);
+            const probeAllowed = canProbeResource(file, snapshot);
+            return (
+              <article className={`result-card ${selected.has(file.id) ? "selected" : ""}`}>
+                <input
+                  className="card-check"
+                  type="checkbox"
+                  aria-label={`选择 ${file.filename}`}
+                  checked={selected.has(file.id)}
+                  onChange={() => toggle(file.id)}
+                />
+                <div className={`file-type type-${file.category}`}>
+                  {file.extension?.toUpperCase() ?? "?"}
                 </div>
-                <div className="badges">
-                  <span>{file.sources.map((item) => sourceLabels[item]).join(" + ")}</span>
-                  {file.confidence < 50 ? (
-                    <span className="warning">可能资源，请人工确认</span>
-                  ) : null}
-                  {file.isExternal ? (
-                    <span className="warning">外部资源</span>
-                  ) : (
-                    <span>同站资源</span>
-                  )}
-                  {file.warnings.map((warning) => (
-                    <span className="warning" key={warning}>
-                      {warningLabels[warning] ?? "检测到资源风险"}
-                    </span>
-                  ))}
+                <div className="result-body">
+                  <h3 title={file.filename}>{file.filename}</h3>
+                  <p className="url" title={file.canonicalUrl}>
+                    {file.canonicalUrl}
+                  </p>
+                  <div className="metadata">
+                    <span>{categoryLabels[file.category]}</span>
+                    <span>{formatSize(file.contentLength)}</span>
+                    <span>{file.mimeType ?? "MIME 未知"}</span>
+                    <span>置信度 {file.confidence}</span>
+                  </div>
+                  <div className="badges">
+                    <span>{file.sources.map((item) => sourceLabels[item]).join(" + ")}</span>
+                    {file.confidence < 50 ? (
+                      <span className="warning">可能资源，请人工确认</span>
+                    ) : null}
+                    {file.isExternal ? (
+                      <span className="warning">外部资源</span>
+                    ) : (
+                      <span>同站资源</span>
+                    )}
+                    {file.warnings.map((warning) => (
+                      <span className="warning" key={warning}>
+                        {warningLabels[warning] ?? "检测到资源风险"}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="card-actions">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runCardAction(
+                          () => navigator.clipboard.writeText(file.finalUrl ?? file.canonicalUrl),
+                          "已复制文件链接。",
+                          "无法写入剪贴板。"
+                        )
+                      }
+                    >
+                      复制
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runCardAction(
+                          () => chrome.tabs.create({ url: file.sourcePageUrl }),
+                          "已打开来源页。",
+                          "无法打开来源页。"
+                        )
+                      }
+                    >
+                      来源页
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!openable}
+                      onClick={() =>
+                        void runCardAction(
+                          () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
+                          "已打开文件链接。",
+                          "无法打开文件链接。"
+                        )
+                      }
+                    >
+                      打开
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!openable || !probeAllowed}
+                      title={
+                        !openable
+                          ? "临时或无效资源无法探测元数据"
+                          : !probeAllowed
+                            ? "需要完整嗅探权限或对应资源站点权限"
+                            : undefined
+                      }
+                      onClick={() => void probe(file)}
+                    >
+                      元数据
+                    </button>
+                  </div>
                 </div>
-                <div className="card-actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void runCardAction(
-                        () => navigator.clipboard.writeText(file.finalUrl ?? file.canonicalUrl),
-                        "已复制文件链接。",
-                        "无法写入剪贴板。"
-                      )
-                    }
-                  >
-                    复制
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void runCardAction(
-                        () => chrome.tabs.create({ url: file.sourcePageUrl }),
-                        "已打开来源页。",
-                        "无法打开来源页。"
-                      )
-                    }
-                  >
-                    来源页
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canOpenResource(file)}
-                    onClick={() =>
-                      void runCardAction(
-                        () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
-                        "已打开文件链接。",
-                        "无法打开文件链接。"
-                      )
-                    }
-                  >
-                    打开
-                  </button>
-                  <button
-                    type="button"
-                    disabled={
-                      (file.isExternal && !snapshot.allSitesAccess) || !canOpenResource(file)
-                    }
-                    onClick={() => void probe(file)}
-                  >
-                    元数据
-                  </button>
-                </div>
-              </div>
-            </article>
-          )}
+              </article>
+            );
+          }}
         />
       ) : (
         <div className="empty-state">

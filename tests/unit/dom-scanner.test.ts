@@ -104,6 +104,34 @@ describe("scanDocument", () => {
     );
   });
 
+  it("忽略非 GET 表单 action 但保留普通 GET 页面入口", () => {
+    document.body.innerHTML = `
+      <form method="post" action="/api/export.csv"></form>
+      <form method="get" action="/search"></form>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.resources.map((item) => item.url)).not.toContain(
+      `${location.origin}/api/export.csv`
+    );
+    expect(result.pages.map((item) => item.url)).not.toContain(`${location.origin}/api/export.csv`);
+    expect(result.pages.map((item) => item.url)).toContain(`${location.origin}/search`);
+  });
+
+  it("页面 robots none 阻止 SPA DOM 链接进入递归队列", () => {
+    document.head.innerHTML = '<meta name="robots" content="none">';
+    document.body.innerHTML = '<a href="/private-page">页面</a>';
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.pages).toContainEqual(
+      expect.objectContaining({ url: `${location.origin}/private-page`, noFollow: true })
+    );
+  });
+
   it("在发送前限制超长字段和超大资源批次", () => {
     document.title = "长".repeat(3000);
     document.body.innerHTML = `<a download href="https://example.test/${"x".repeat(17_000)}.txt">超长</a>`;

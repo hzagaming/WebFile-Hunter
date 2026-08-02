@@ -15,4 +15,10 @@ describe("parseContentDispositionFilename", () => {
     expect(parseContentDispositionFilename("inline")).toBeUndefined();
     expect(parseContentDispositionFilename("attachment; filename*=UTF-8''%ZZ")).toBeUndefined();
   });
+
+  it("扩展文件名损坏时回退到合法的普通文件名", () => {
+    expect(
+      parseContentDispositionFilename("attachment; filename=manual.pdf; filename*=UTF-8''%ZZ")
+    ).toBe("manual.pdf");
+  });
 });

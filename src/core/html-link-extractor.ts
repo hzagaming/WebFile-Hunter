@@ -1,6 +1,6 @@
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { looksLikeFileUrl } from "./file-classifier";
-import { linkTargetKind, metaResourceKind } from "./html-resource-policy";
+import { linkTargetKind, metaResourceKind, robotsMetaNoFollow } from "./html-resource-policy";
 import { normalizeUrl, sameOrigin } from "./url-normalizer";
 import type { RawResource } from "@/types/scanner";
 import type { ExtractedHtmlLinks, PageCandidate } from "@/types/scanner";
@@ -119,14 +119,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     if (element.tagName === "meta") {
       const name = attrs.get("name")?.toLowerCase();
       const content = attrs.get("content") ?? "";
-      if (
-        name === "robots" &&
-        content
-          .toLowerCase()
-          .split(/[,\s]+/)
-          .includes("nofollow")
-      )
-        noFollow = true;
+      if (name === "robots" && robotsMetaNoFollow(content)) noFollow = true;
       if (attrs.get("http-equiv")?.toLowerCase() === "refresh") {
         const target = /(?:^|;)\s*url\s*=\s*['"]?([^'"]+)['"]?/i.exec(content)?.[1]?.trim();
         if (target) {
@@ -213,6 +206,9 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     }
 
     if (element.tagName === "a" || element.tagName === "form" || element.tagName === "iframe") {
+      const formMethod = (attrs.get("method") ?? "").trim().toLowerCase();
+      if (element.tagName === "form" && (formMethod === "post" || formMethod === "dialog"))
+        continue;
       const attribute =
         element.tagName === "form" ? "action" : element.tagName === "iframe" ? "src" : "href";
       const raw = attrs.get(attribute);

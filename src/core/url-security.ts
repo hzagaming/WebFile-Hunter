@@ -30,14 +30,20 @@ function isPrivateIpv4(host: string): boolean {
   if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return false;
   const octets = parts.map(Number);
   if (octets.some((part) => part > 255)) return false;
-  const [first = -1, second = -1] = octets;
+  const [first = -1, second = -1, third = -1] = octets;
   return (
     first === 0 ||
     first === 10 ||
     first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
     (first === 169 && second === 254) ||
     (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168)
+    (first === 192 && second === 0 && third === 2) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    (first === 198 && second === 51 && third === 100) ||
+    (first === 203 && second === 0 && third === 113) ||
+    first >= 224
   );
 }
 
@@ -62,7 +68,11 @@ function isPrivateHost(hostname: string): boolean {
   if (mappedIpv4 && isPrivateIpv4(mappedIpv4)) return true;
   const compact = host.replace(/^0+(?=[0-9a-f])/i, "");
   return (
-    compact === "::1" || /^f[cd][0-9a-f]{2}:/i.test(compact) || /^fe[89ab][0-9a-f]:/i.test(compact)
+    compact === "::" ||
+    compact === "::1" ||
+    /^f[cd][0-9a-f]{2}:/i.test(compact) ||
+    /^fe[89a-f][0-9a-f]:/i.test(compact) ||
+    /^ff[0-9a-f]{2}:/i.test(compact)
   );
 }
 
