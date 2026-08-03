@@ -1,6 +1,14 @@
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { looksLikeFileUrl } from "./file-classifier";
-import { linkTargetKind, metaResourceKind, robotsMetaNoFollow } from "./html-resource-policy";
+import {
+  elementResourceHint,
+  isJsonLdType,
+  linkTargetKind,
+  metaResourceKind,
+  resourceMimeHint,
+  robotsMetaNoFollow
+} from "./html-resource-policy";
+import { extractStructuredDataResources } from "./structured-data-resources";
 import { normalizeUrl, sameOrigin } from "./url-normalizer";
 import type { RawResource } from "@/types/scanner";
 import type { ExtractedHtmlLinks, PageCandidate } from "@/types/scanner";
@@ -61,7 +69,10 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
   const document = parse(html);
   const elements: Element[] = [];
   const walk = (node: Node): void => {
-    if ("tagName" in node) elements.push(node);
+    if ("tagName" in node) {
+      elements.push(node);
+      if ("content" in node) walk(node.content);
+    }
     if ("childNodes" in node) node.childNodes.forEach(walk);
   };
   walk(document);
@@ -88,7 +99,8 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     raw: string,
     source: RawResource["source"],
     element: Element,
-    attribute?: string
+    attribute?: string,
+    resourceHint?: RawResource["resourceHint"]
   ): void => {
     const values = attribute === "srcset" ? srcsetUrls(raw) : [raw];
     for (const value of values) {
@@ -96,7 +108,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
         const url = normalizeUrl(value, baseUrl).canonicalUrl;
         if (!resourceMap.has(url)) {
           const attrs = attributes(element);
-          const mimeType = attrs.get("type");
+          const mimeType = attribute === "structured-data" ? undefined : attrs.get("type");
           resourceMap.set(url, {
             url,
             source,
@@ -104,6 +116,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
             ...(attribute ? { attribute } : {}),
             ...(mimeType ? { mimeType } : {}),
             ...(attrs.has("download") ? { hasDownload: true } : {}),
+            ...(resourceHint ? { resourceHint } : {}),
             isExternal: new URL(url).origin !== origin
           });
         }
@@ -130,15 +143,24 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
           }
         }
       }
-      if (
-        content &&
-        metaResourceKind({
-          name: attrs.get("name"),
-          property: attrs.get("property"),
-          itemprop: attrs.get("itemprop")
-        })
-      ) {
-        addResource(content, "CRAWLED_PAGE", element, "content");
+      const resourceKind = metaResourceKind({
+        name: attrs.get("name"),
+        property: attrs.get("property"),
+        itemprop: attrs.get("itemprop")
+      });
+      if (content && resourceKind) {
+        addResource(
+          content,
+          "CRAWLED_PAGE",
+          element,
+          "content",
+          resourceKind === "image" ? "image" : "resource"
+        );
+      }
+    }
+    if (element.tagName === "script" && isJsonLdType(attrs.get("type"))) {
+      for (const resource of extractStructuredDataResources(textContent(element))) {
+        addResource(resource.url, "CRAWLED_PAGE", element, "structured-data", resource.kind);
       }
     }
     if (
@@ -160,8 +182,23 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
         try {
           const url = normalizeUrl(href, baseUrl).canonicalUrl;
           const kind = linkTargetKind(attrs.get("rel"));
-          if (looksLikeFileUrl(url) || kind === "resource") {
-            addResource(href, "CRAWLED_PAGE", element, "href");
+          const explicitResource =
+            resourceMimeHint(attrs.get("type")) ||
+            Boolean(metaResourceKind({ itemprop: attrs.get("itemprop") }));
+          if (looksLikeFileUrl(url) || kind === "resource" || explicitResource) {
+            addResource(
+              href,
+              "CRAWLED_PAGE",
+              element,
+              "href",
+              elementResourceHint({
+                tagName: element.tagName,
+                attribute: "href",
+                rel: attrs.get("rel"),
+                as: attrs.get("as"),
+                itemprop: attrs.get("itemprop")
+              })
+            );
           } else if (kind === "page") {
             pageMap.set(url, { url, tagName: "link", noFollow: false });
           }
@@ -171,10 +208,12 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
       }
     }
     if (element.tagName === "style") {
-      for (const raw of cssUrls(textContent(element))) addResource(raw, "CSS_URL", element);
+      for (const raw of cssUrls(textContent(element)))
+        addResource(raw, "CSS_URL", element, undefined, "resource");
     }
     const style = attrs.get("style");
-    if (style) for (const raw of cssUrls(style)) addResource(raw, "CSS_URL", element);
+    if (style)
+      for (const raw of cssUrls(style)) addResource(raw, "CSS_URL", element, undefined, "resource");
 
     for (const attrName of new Set([
       ...(RESOURCE_ATTRIBUTES[element.tagName] ?? []),
@@ -197,7 +236,14 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
             value,
             attrs.has("download") ? "DOWNLOAD_ATTRIBUTE" : "CRAWLED_PAGE",
             element,
-            attrName
+            attrName,
+            elementResourceHint({
+              tagName: element.tagName,
+              attribute: attrName,
+              rel: attrs.get("rel"),
+              as: attrs.get("as"),
+              itemprop: attrs.get("itemprop")
+            })
           );
         } else if (isPageContainer) {
           pageMap.set(normalized, { url: normalized, tagName: element.tagName, noFollow: false });
@@ -215,12 +261,22 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
       if (!raw) continue;
       try {
         const url = normalizeUrl(raw, baseUrl).canonicalUrl;
-        if (looksLikeFileUrl(url) || attrs.has("download")) {
+        const explicitResource =
+          resourceMimeHint(attrs.get("type")) ||
+          Boolean(metaResourceKind({ itemprop: attrs.get("itemprop") }));
+        if (looksLikeFileUrl(url) || attrs.has("download") || explicitResource) {
           addResource(
             raw,
             attrs.has("download") ? "DOWNLOAD_ATTRIBUTE" : "CRAWLED_PAGE",
             element,
-            attribute
+            attribute,
+            elementResourceHint({
+              tagName: element.tagName,
+              attribute,
+              rel: attrs.get("rel"),
+              as: attrs.get("as"),
+              itemprop: attrs.get("itemprop")
+            })
           );
         } else if (!pageMap.has(url)) {
           pageMap.set(url, {

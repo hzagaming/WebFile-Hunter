@@ -29,4 +29,16 @@ describe("createFileCandidate", () => {
     expect(shouldIncludeCandidate(image, { scanImages: true })).toBe(true);
     expect(shouldIncludeCandidate(image, { scanImages: false })).toBe(false);
   });
+
+  it("明确声明的无扩展名资源不会被隐藏为低置信度结果", () => {
+    const candidate = createFileCandidate({
+      url: "https://example.test/api/opaque",
+      source: "DOM_ATTRIBUTE",
+      sourcePageUrl: "https://example.test/page",
+      tagName: "script",
+      explicitResource: true
+    });
+
+    expect(candidate).toMatchObject({ category: "unknown", confidence: 70 });
+  });
 });

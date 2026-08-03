@@ -84,6 +84,54 @@ describe("extractLinksFromHtml", () => {
     expect(result.pages.map((item) => item.url)).toContain("https://example.test/page-2");
   });
 
+  it("从静态 HTML 发现 JSON-LD、enclosure、MIME 与 itemprop 资源", () => {
+    const result = extractLinksFromHtml(
+      `
+        <link rel="enclosure" type="audio/mpeg" href="/api/podcast">
+        <script type="Application/LD+JSON; charset=utf-8">
+          {
+            "@context": "https://schema.org",
+            "url": "/article",
+            "contentUrl": "/api/structured-video",
+            "image": {"url": "/files/structured-cover.webp"}
+          }
+        </script>
+        <a type="application/pdf" href="/api/typed-document">类型文档</a>
+        <link itemprop="contentUrl" href="/api/itemprop-video">
+      `,
+      "https://example.test/article"
+    );
+    const resources = result.resources.map((item) => item.url);
+
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        "https://example.test/api/podcast",
+        "https://example.test/api/typed-document",
+        "https://example.test/api/itemprop-video",
+        "https://example.test/api/structured-video",
+        "https://example.test/files/structured-cover.webp"
+      ])
+    );
+    expect(resources).not.toContain("https://example.test/article");
+    expect(
+      result.resources.find((item) => item.url.endsWith("/api/structured-video"))
+    ).toMatchObject({ resourceHint: "resource" });
+    expect(
+      result.resources.find((item) => item.url.endsWith("/files/structured-cover.webp"))
+    ).toMatchObject({ resourceHint: "image" });
+  });
+
+  it("进入 template 内容树发现静态资源", () => {
+    const result = extractLinksFromHtml(
+      '<template><a type="application/pdf" href="/api/template-document">模板文档</a></template>',
+      "https://example.test/article"
+    );
+
+    expect(result.resources).toContainEqual(
+      expect.objectContaining({ url: "https://example.test/api/template-document" })
+    );
+  });
+
   it("忽略非 GET 表单 action 但保留普通 GET 页面入口", () => {
     const result = extractLinksFromHtml(
       [

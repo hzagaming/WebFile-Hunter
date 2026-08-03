@@ -34,11 +34,26 @@ describe("scanDocument", () => {
   });
 
   it("图片开关关闭时跳过 img 元素", () => {
-    document.body.innerHTML = '<img src="/hidden.png"><a href="/shown.txt">文本</a>';
+    document.body.innerHTML = `
+      <img src="/hidden.png" data-src="/api/lazy-image">
+      <video src="/api/video" poster="/api/poster"></video>
+      <svg><image href="/api/svg-image"></image></svg>
+      <a href="/shown.txt">文本</a>
+    `;
     vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
     const result = scanDocument({ includeImages: false, includeStylesheets: false });
-    expect(result.resources.some((item) => item.url.endsWith("hidden.png"))).toBe(false);
-    expect(result.resources.some((item) => item.url.endsWith("shown.txt"))).toBe(true);
+    const urls = result.resources.map((item) => item.url);
+    for (const url of [
+      `${location.origin}/hidden.png`,
+      `${location.origin}/api/lazy-image`,
+      `${location.origin}/api/poster`,
+      `${location.origin}/api/svg-image`
+    ]) {
+      expect(urls).not.toContain(url);
+    }
+    expect(urls).toEqual(
+      expect.arrayContaining([`${location.origin}/api/video`, `${location.origin}/shown.txt`])
+    );
   });
 
   it("发现视频封面、SVG 图片与延迟媒体属性", () => {
@@ -88,6 +103,88 @@ describe("scanDocument", () => {
     );
     expect(resources).not.toContain(location.href);
     expect(result.pages.map((item) => item.url)).toContain(`${location.origin}/page-2`);
+  });
+
+  it("发现 JSON-LD、enclosure、MIME 与 itemprop 显式资源", () => {
+    document.head.innerHTML = `
+      <link rel="enclosure" type="audio/mpeg" href="/api/podcast">
+      <script type="Application/LD+JSON; charset=utf-8">
+        {
+          "@context": "https://schema.org",
+          "url": "/article",
+          "contentUrl": "/api/structured-video",
+          "thumbnailUrl": "/files/structured-poster.webp"
+        }
+      </script>
+    `;
+    document.body.innerHTML = `
+      <a type="application/pdf" href="/api/typed-document">类型文档</a>
+      <a itemprop="contentUrl" href="/api/itemprop-video">结构化视频</a>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+    const resources = result.resources.map((item) => item.url);
+
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/api/podcast`,
+        `${location.origin}/api/typed-document`,
+        `${location.origin}/api/itemprop-video`,
+        `${location.origin}/api/structured-video`,
+        `${location.origin}/files/structured-poster.webp`
+      ])
+    );
+    expect(resources).not.toContain(`${location.origin}/article`);
+    expect(
+      result.resources.find((item) => item.url.endsWith("/api/structured-video"))
+    ).toMatchObject({ resourceHint: "resource" });
+    expect(
+      result.resources.find((item) => item.url.endsWith("/files/structured-poster.webp"))
+    ).toMatchObject({ resourceHint: "image" });
+  });
+
+  it("关闭图片扫描时跳过 JSON-LD 图片但保留内容资源", () => {
+    document.head.innerHTML = `
+      <script type="Application/LD+JSON; charset=utf-8">
+        {"contentUrl":"/api/video","thumbnailUrl":"/files/poster.webp"}
+      </script>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const resources = scanDocument({
+      includeImages: false,
+      includeStylesheets: false
+    }).resources.map((item) => item.url);
+
+    expect(resources).toContain(`${location.origin}/api/video`);
+    expect(resources).not.toContain(`${location.origin}/files/poster.webp`);
+  });
+
+  it("进入 template 与开放 Shadow DOM 发现资源", () => {
+    const template = document.createElement("template");
+    template.innerHTML = `
+      <a type="application/pdf" href="/api/template-document">模板文档</a>
+      <style>.cover { background: url("/files/template-cover.webp") }</style>
+    `;
+    const host = document.createElement("div");
+    host.attachShadow({ mode: "open" }).innerHTML = `
+      <video src="/files/shadow-video.mp4"></video>
+      <style>.wave { mask: url("/files/shadow-wave.svg") }</style>
+    `;
+    document.body.append(template, host);
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const resources = scanDocument().resources.map((item) => item.url);
+
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/api/template-document`,
+        `${location.origin}/files/shadow-video.mp4`,
+        `${location.origin}/files/template-cover.webp`,
+        `${location.origin}/files/shadow-wave.svg`
+      ])
+    );
   });
 
   it("保留页面内 blob 临时媒体资源供安全标记", () => {

@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startContentMonitor } from "@/content/mutation-monitor";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  document.head.replaceChildren();
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("startContentMonitor", () => {
   it("监听全部支持的动态 data 属性", () => {
-    const observe = vi.fn();
+    const observe = vi.fn<(target: Node, options?: MutationObserverInit) => void>();
     vi.stubGlobal(
       "MutationObserver",
       class {
@@ -44,6 +49,65 @@ describe("startContentMonitor", () => {
         "lazy-src"
       ])
     );
+    monitor.stop();
+  });
+
+  it("同时观察已有 template 与开放 Shadow DOM", () => {
+    const template = document.createElement("template");
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    document.body.append(template, host);
+    const observe = vi.fn<(target: Node, options?: MutationObserverInit) => void>();
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        observe = observe;
+        disconnect = vi.fn();
+      }
+    );
+    vi.stubGlobal(
+      "PerformanceObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      }
+    );
+
+    const monitor = startContentMonitor(vi.fn(), 60_000);
+
+    expect(observe.mock.calls.map(([target]) => target)).toEqual(
+      expect.arrayContaining([document.documentElement, template.content, shadow])
+    );
+    monitor.stop();
+  });
+
+  it("发现稍后附加到既有宿主的开放 Shadow Root", () => {
+    vi.useFakeTimers();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const onBatch = vi.fn();
+    const observe = vi.fn<(target: Node, options?: MutationObserverInit) => void>();
+    vi.stubGlobal(
+      "MutationObserver",
+      class {
+        observe = observe;
+        disconnect = vi.fn();
+      }
+    );
+    vi.stubGlobal(
+      "PerformanceObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      }
+    );
+    const monitor = startContentMonitor(onBatch, 60_000);
+    const shadow = host.attachShadow({ mode: "open" });
+
+    vi.advanceTimersByTime(2_300);
+
+    expect(observe.mock.calls.map(([target]) => target)).toContain(shadow);
+    expect(onBatch).toHaveBeenCalledTimes(1);
     monitor.stop();
   });
 });

@@ -401,6 +401,43 @@ try {
           file.sessionId === currentSession.id &&
           file.warnings.includes("temporary_blob") &&
           file.isDownloadable === false
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/structured-video` &&
+          file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/typed-document` &&
+          file.mimeType === "application/pdf"
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/podcast` &&
+          file.mimeType === "audio/mpeg"
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/itemprop-video` &&
+          file.confidence === 70 &&
+          file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/template-document` &&
+          file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/shadow-video.mp4` &&
+          file.sources.includes("DOM_ATTRIBUTE")
       )
   );
   const currentFiles = currentRows.files.filter((file) => file.sessionId === currentSession.id);
@@ -437,6 +474,14 @@ try {
   await fixturePage.locator("#load-audio").click();
   await fixturePage.locator("#load-api").click();
   await fixturePage.evaluate(() => {
+    const host = document.querySelector("#late-shadow-host");
+    if (!(host instanceof HTMLElement) || host.shadowRoot) {
+      throw new Error("延迟 Shadow Root 宿主状态异常");
+    }
+    host.attachShadow({ mode: "open" }).innerHTML =
+      '<a type="application/pdf" href="/api/late-shadow-document">延迟 Shadow 文档</a>';
+  });
+  await fixturePage.evaluate(() => {
     const meta = document.querySelector("#dynamic-og-image");
     if (!(meta instanceof HTMLMetaElement)) throw new Error("动态 OG 元信息不存在");
     meta.content = "/files/dynamic-og.webp";
@@ -471,6 +516,13 @@ try {
         (file) =>
           file.sessionId === liveSession.id &&
           file.canonicalUrl === `${server.origin}/files/dynamic-og.webp` &&
+          file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.canonicalUrl === `${server.origin}/api/late-shadow-document` &&
+          file.mimeType === "application/pdf" &&
           file.sources.includes("DOM_ATTRIBUTE")
       )
   );
@@ -571,7 +623,15 @@ try {
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/archive.zip")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/sample.txt")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/sitemap-only.json")) ||
-    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/spa-only.csv"))
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/spa-only.csv")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/structured-video")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/typed-document")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/template-document")) ||
+    !recursiveFiles.some(
+      (file) =>
+        file.canonicalUrl.endsWith("/files/shadow-video.mp4") &&
+        file.sources.includes("DOM_ATTRIBUTE")
+    )
   ) {
     throw new Error(
       `递归扫描链路不完整：${JSON.stringify({ completedRecursive, files: recursiveFiles.length })}`
@@ -859,6 +919,8 @@ try {
   console.log(`Edge MV3 加载通过：${extensionOrigin}`);
   console.log("侧栏独立打开时可识别普通 HTTP/HTTPS 网页");
   console.log(`当前页扫描通过：${currentFiles.length} 个候选`);
+  console.log("JSON-LD、显式 MIME、itemprop 与 enclosure 资源发现通过");
+  console.log("template、开放 Shadow DOM 与延迟 attachShadow 资源发现通过");
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
   console.log("第三方 CDN 响应与跨域 frame 资源嗅探通过");

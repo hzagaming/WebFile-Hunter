@@ -1,9 +1,18 @@
 import { looksLikeFileUrl } from "@/core/file-classifier";
-import { linkTargetKind, metaResourceKind, robotsMetaNoFollow } from "@/core/html-resource-policy";
+import {
+  elementResourceHint,
+  isJsonLdType,
+  linkTargetKind,
+  metaResourceKind,
+  resourceMimeHint,
+  robotsMetaNoFollow
+} from "@/core/html-resource-policy";
+import { extractStructuredDataResources } from "@/core/structured-data-resources";
 import { normalizeUrl } from "@/core/url-normalizer";
 import type { PageCandidate, PageScanResult, RawResource } from "@/types/scanner";
 import { extractCssUrls, scanAccessibleStylesheets } from "./style-url-scanner";
 import { scanPerformanceEntries } from "./performance-scanner";
+import { discoverScanRoots } from "./scan-roots";
 
 const MAX_ITEMS = 20_000;
 const MAX_TITLE_LENGTH = 2048;
@@ -69,6 +78,9 @@ export function scanDocument(
   const resources = new Map<string, RawResource>();
   const pages = new Map<string, PageCandidate>();
   const pageOrigin = location.origin;
+  const roots = discoverScanRoots();
+  const queryAll = <T extends Element>(selector: string): T[] =>
+    roots.flatMap((root) => [...root.querySelectorAll<T>(selector)]);
   const pageNoFollow = [
     ...document.querySelectorAll<HTMLMetaElement>('meta[name="robots" i]')
   ].some((meta) => robotsMetaNoFollow(meta.content));
@@ -77,12 +89,13 @@ export function scanDocument(
     raw: string,
     element: Element | undefined,
     attribute: string | undefined,
-    source: RawResource["source"]
+    source: RawResource["source"],
+    resourceHint?: RawResource["resourceHint"]
   ): void => {
     if (resources.size >= MAX_ITEMS) return;
     const url = normalize(raw);
     if (!url || resources.has(url)) return;
-    const mimeType = element?.getAttribute("type") ?? undefined;
+    const mimeType = attribute === "structured-data" ? undefined : element?.getAttribute("type");
     const hasDownload = element instanceof HTMLAnchorElement && element.hasAttribute("download");
     resources.set(url, {
       url,
@@ -91,15 +104,23 @@ export function scanDocument(
       ...(attribute ? { attribute } : {}),
       ...(mimeType ? { mimeType } : {}),
       ...(hasDownload ? { hasDownload: true } : {}),
+      ...(resourceHint ? { resourceHint } : {}),
       isExternal: new URL(url).origin !== pageOrigin
     });
   };
 
   for (const [selector, attributeNames] of SELECTORS) {
-    if (selector === "img" && options.includeImages === false) continue;
-    for (const element of document.querySelectorAll(selector)) {
+    for (const element of queryAll(selector)) {
       if (element instanceof HTMLFormElement && element.method.toLowerCase() !== "get") continue;
       for (const attribute of attributeNames) {
+        const resourceHint = elementResourceHint({
+          tagName: element.tagName,
+          attribute,
+          rel: element.getAttribute("rel") ?? undefined,
+          as: element.getAttribute("as") ?? undefined,
+          itemprop: element.getAttribute("itemprop") ?? undefined
+        });
+        if (resourceHint === "image" && options.includeImages === false) continue;
         const raw = element.getAttribute(attribute);
         if (!raw) continue;
         const values = attribute === "srcset" ? splitSrcset(raw) : [raw];
@@ -108,8 +129,13 @@ export function scanDocument(
           if (!url) continue;
           if (element.tagName.toLowerCase() === "link") {
             const kind = linkTargetKind(element.getAttribute("rel") ?? undefined);
-            if (looksLikeFileUrl(url) || kind === "resource") {
-              addResource(value, element, attribute, "DOM_ATTRIBUTE");
+            const explicitResource =
+              resourceMimeHint(element.getAttribute("type") ?? undefined) ||
+              Boolean(
+                metaResourceKind({ itemprop: element.getAttribute("itemprop") ?? undefined })
+              );
+            if (looksLikeFileUrl(url) || kind === "resource" || explicitResource) {
+              addResource(value, element, attribute, "DOM_ATTRIBUTE", resourceHint);
             } else if (kind === "page" && pages.size < MAX_ITEMS && !pages.has(url)) {
               pages.set(url, { url, tagName: "link", noFollow: pageNoFollow });
             }
@@ -118,8 +144,11 @@ export function scanDocument(
           const pageElement = element.matches("a,form,iframe");
           const downloadable =
             element instanceof HTMLAnchorElement && element.hasAttribute("download");
-          if (!pageElement || looksLikeFileUrl(url) || downloadable) {
-            addResource(value, element, attribute, "DOM_ATTRIBUTE");
+          const explicitResource =
+            resourceMimeHint(element.getAttribute("type") ?? undefined) ||
+            Boolean(metaResourceKind({ itemprop: element.getAttribute("itemprop") ?? undefined }));
+          if (!pageElement || looksLikeFileUrl(url) || downloadable || explicitResource) {
+            addResource(value, element, attribute, "DOM_ATTRIBUTE", resourceHint);
           } else if (pages.size < MAX_ITEMS && !pages.has(url)) {
             pages.set(url, {
               url,
@@ -135,20 +164,25 @@ export function scanDocument(
     }
   }
 
-  for (const element of document.querySelectorAll<HTMLElement>("[style]")) {
+  for (const element of queryAll<HTMLElement>("[style]")) {
     for (const raw of extractCssUrls(element.getAttribute("style") ?? "")) {
-      addResource(raw, element, "style", "CSS_URL");
+      addResource(raw, element, "style", "CSS_URL", "resource");
     }
   }
   if (options.includeStylesheets !== false) {
+    for (const element of queryAll<HTMLStyleElement>("style")) {
+      for (const raw of extractCssUrls(element.textContent ?? "")) {
+        addResource(raw, element, "style", "CSS_URL", "resource");
+      }
+    }
     for (const raw of scanAccessibleStylesheets())
-      addResource(raw, undefined, undefined, "CSS_URL");
+      addResource(raw, undefined, undefined, "CSS_URL", "resource");
   }
   if (options.includePerformance !== false) {
     for (const raw of scanPerformanceEntries())
       addResource(raw, undefined, undefined, "PERFORMANCE_ENTRY");
   }
-  for (const meta of document.querySelectorAll<HTMLMetaElement>("meta[content]")) {
+  for (const meta of queryAll<HTMLMetaElement>("meta[content]")) {
     const content = meta.content.trim();
     const kind = metaResourceKind({
       name: meta.name || undefined,
@@ -156,7 +190,20 @@ export function scanDocument(
       itemprop: meta.getAttribute("itemprop") ?? undefined
     });
     if (content && kind && !(kind === "image" && options.includeImages === false)) {
-      addResource(content, meta, "content", "DOM_ATTRIBUTE");
+      addResource(
+        content,
+        meta,
+        "content",
+        "DOM_ATTRIBUTE",
+        kind === "image" ? "image" : "resource"
+      );
+    }
+  }
+  for (const script of queryAll<HTMLScriptElement>("script[type]")) {
+    if (!isJsonLdType(script.type)) continue;
+    for (const resource of extractStructuredDataResources(script.textContent ?? "")) {
+      if (resource.kind === "image" && options.includeImages === false) continue;
+      addResource(resource.url, script, "structured-data", "DOM_ATTRIBUTE", resource.kind);
     }
   }
 

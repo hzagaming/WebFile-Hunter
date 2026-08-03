@@ -6,7 +6,7 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 
 ## 功能
 
-- 当前页面扫描：DOM 属性、`download`、`srcset`、内联/可访问样式表、Performance Resource Timing、可注入 iframe。
+- 当前页面扫描：DOM 属性、`download`、`srcset`、Open Graph、JSON-LD、itemprop、enclosure、template、开放 Shadow DOM、内联/可访问样式表、Performance Resource Timing、可注入 iframe。
 - 完整实时嗅探：用户明确授权后，仅观察当前标签页的同站与第三方 CDN、媒体、接口及 frame 请求，合并 `requestId` 对应的请求与响应头，并在同源导航后按剩余时长继续监听。
 - 同源递归扫描：直接 GET 静态 HTML，结合页面链接、robots.txt 声明的 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度/页面/并发/速率硬限制、超时、重试、暂停、恢复和取消。
 - 文件识别：扩展名、MIME、Content-Disposition、标签上下文、查询参数、请求类型和响应大小综合评分。
@@ -65,7 +65,7 @@ npm run test:e2e
 npm run package
 ```
 
-`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、跨域资源嗅探、Sitemap Index/raw gzip/SPA 递归、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
+`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、JSON-LD/显式 MIME 资源、跨域资源嗅探、Sitemap Index/raw gzip/SPA 递归、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
 
 脚本会自动探测 macOS、Windows 和 Linux 的常见 Edge 安装路径；非标准安装可设置 `EDGE_PATH`。
 
@@ -154,7 +154,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.1.1.zip
+release/webfile-hunter-v1.2.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。
@@ -162,6 +162,7 @@ ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备�
 ## 已知限制
 
 - 可从 Sitemap 和当前已渲染 DOM 补充页面，但无法发现二者及网络请求都未引用的隐藏文件；不执行目录爆破、文件名枚举或外域无限扩散。
+- JSON-LD 只读取明确的资源字段，不分析任意 JavaScript 字符串或把普通页面 URL 当作下载地址。
 - 不破解登录、付费内容、验证码、防盗链、许可证或 DRM。
 - `blob:` URL 通常不是永久下载地址；m3u8 和 DASH 不是普通 MP3 直链。
 - HTML 页面直接使用 GET；资源元数据 HEAD 被明确标记为不支持时才尝试受限 Range GET，不绕过服务器限制。

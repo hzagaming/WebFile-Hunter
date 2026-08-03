@@ -1,3 +1,5 @@
+import { isHtmlMime, normalizeMimeType } from "./mime-map";
+
 export type LinkTargetKind = "resource" | "page" | "ignore";
 export type MetaResourceKind = "image" | "media";
 
@@ -9,9 +11,16 @@ const RESOURCE_LINK_RELS = new Set([
   "mask-icon",
   "preload",
   "modulepreload",
-  "manifest"
+  "manifest",
+  "enclosure"
 ]);
 const PAGE_LINK_RELS = new Set(["canonical", "next", "prev"]);
+const IMAGE_LINK_RELS = new Set([
+  "icon",
+  "apple-touch-icon",
+  "apple-touch-startup-image",
+  "mask-icon"
+]);
 const IMAGE_META_KEYS = new Set([
   "og:image",
   "og:image:url",
@@ -52,6 +61,37 @@ export function metaResourceKind(values: {
   if (keys.some((key) => IMAGE_META_KEYS.has(key))) return "image";
   if (keys.some((key) => MEDIA_META_KEYS.has(key))) return "media";
   return undefined;
+}
+
+export function resourceMimeHint(type?: string): boolean {
+  const mime = normalizeMimeType(type);
+  return Boolean(mime?.includes("/") && !isHtmlMime(mime));
+}
+
+export function isJsonLdType(type?: string): boolean {
+  return normalizeMimeType(type) === "application/ld+json";
+}
+
+export function elementResourceHint(values: {
+  tagName?: string | undefined;
+  attribute?: string | undefined;
+  rel?: string | undefined;
+  as?: string | undefined;
+  itemprop?: string | undefined;
+}): "image" | "resource" {
+  const tagName = values.tagName?.toLowerCase();
+  const attribute = values.attribute?.toLowerCase();
+  const rel = values.rel?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+  const itemKind = metaResourceKind({ itemprop: values.itemprop });
+  return tagName === "img" ||
+    tagName === "image" ||
+    attribute === "poster" ||
+    attribute === "data-poster" ||
+    values.as?.toLowerCase() === "image" ||
+    rel.some((token) => IMAGE_LINK_RELS.has(token)) ||
+    itemKind === "image"
+    ? "image"
+    : "resource";
 }
 
 export function robotsMetaNoFollow(content: string): boolean {

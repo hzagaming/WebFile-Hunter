@@ -7,6 +7,7 @@ export interface RawResource {
   attribute?: string;
   mimeType?: string;
   hasDownload?: boolean;
+  resourceHint?: "image" | "resource";
   isExternal: boolean;
 }
 

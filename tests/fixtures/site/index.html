@@ -4,14 +4,30 @@
     <meta charset="UTF-8" />
     <title>WebFile Hunter 演示站</title>
     <link rel="stylesheet" href="/site.css" />
+    <link rel="enclosure" type="audio/mpeg" href="/api/podcast" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoObject",
+        "name": "结构化媒体夹具",
+        "url": "/page-1.html",
+        "contentUrl": "/api/structured-video",
+        "thumbnailUrl": "/files/structured-poster.webp"
+      }
+    </script>
   </head>
   <body>
     <h1>WebFile Hunter 演示站</h1>
     <p>该页面只包含测试占位资源。</p>
     <a href="/files/sample.txt">示例文本</a>
     <a href="/files/document.pdf">示例 PDF</a>
+    <a type="application/pdf" href="/api/typed-document">无后缀 PDF</a>
+    <a itemprop="contentUrl" href="/api/itemprop-video">无后缀结构化视频</a>
     <audio controls src="/files/example.mp3"></audio>
     <img src="/files/pixel.png" alt="测试像素" />
+    <template id="resource-template">
+      <a type="application/pdf" href="/api/template-document">模板文档</a>
+    </template>
     <a href="/page-1.html">第一页</a>
     <button id="load-audio" type="button">动态加载 MP3</button>
     <button id="load-api" type="button">请求无后缀文件</button>

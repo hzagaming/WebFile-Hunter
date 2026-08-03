@@ -10,6 +10,7 @@ export interface ClassificationInput {
   contentDisposition?: string;
   tagName?: string;
   hasDownload?: boolean;
+  explicitResource?: boolean;
   requestType?: string;
   customExtensions?: Record<string, FileCategory>;
   customMimeTypes?: Record<string, FileCategory>;
@@ -82,6 +83,7 @@ export function classifyFile(input: ClassificationInput): ClassificationResult {
   else if (extensionCategory && input.tagName) confidence = 90;
   else if (extensionCategory) confidence = 85;
   else if (input.hasDownload) confidence = 75;
+  else if (input.explicitResource) confidence = 70;
   else if (input.tagName) confidence = 40;
 
   const segmented = warnings.includes("segmented_stream");

@@ -1,5 +1,14 @@
 # 更新记录
 
+## 1.2.0 - 2026-08-03
+
+- 新增 JSON-LD 明确资源字段、显式 MIME、itemprop 与 `rel=enclosure` 发现，避免把普通结构化页面 URL 当作下载资源。
+- 当前页扫描进入 `<template>` 与开放 Shadow DOM，并能在实时监听启动后发现新附加的开放 Shadow Root 及其中样式资源。
+- 无扩展名的明确资源获得可见置信度；图片关闭时统一过滤延迟图片、poster、SVG image 与结构化图片语义。
+- Shadow/Template 根发现增加 20,000 元素与 1,000 root 硬上限，避免超大 DOM 的持续监听造成无界遍历。
+- 真实 Edge E2E 覆盖 JSON-LD、显式 MIME、template、开放/延迟 Shadow DOM、递归、导出、下载与五页窄屏界面。
+- 扩展继续完全本地运行并保持默认静音，不播放音效或背景音乐。
+
 ## 1.1.1 - 2026-08-02
 
 - 修复 SPA 修改既有 Open Graph、Twitter Card 与 itemprop 元信息属性后未触发重新扫描的问题。

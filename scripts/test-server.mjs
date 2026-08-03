@@ -35,6 +35,29 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : "hello report");
       return;
     }
+    if (url.pathname === "/api/podcast") {
+      response.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": "4" });
+      response.end(request.method === "HEAD" ? undefined : Buffer.from([0x49, 0x44, 0x33, 0]));
+      return;
+    }
+    if (url.pathname === "/api/structured-video" || url.pathname === "/api/itemprop-video") {
+      const content = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70]);
+      response.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(content.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : content);
+      return;
+    }
+    if (
+      url.pathname === "/api/typed-document" ||
+      url.pathname === "/api/template-document" ||
+      url.pathname === "/api/late-shadow-document"
+    ) {
+      response.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": "4" });
+      response.end(request.method === "HEAD" ? undefined : "%PDF");
+      return;
+    }
     if (url.pathname === "/api/cross-origin") {
       response.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
@@ -70,6 +93,15 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : content);
       return;
     }
+    if (url.pathname === "/files/shadow-video.mp4") {
+      const content = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70]);
+      response.writeHead(200, {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(content.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : content);
+      return;
+    }
     if (url.pathname === "/files/frame-poster.webp") {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {
@@ -80,6 +112,15 @@ export async function startTestServer() {
       return;
     }
     if (url.pathname === "/files/dynamic-og.webp") {
+      const icon = await readFile(resolve("public/icons/icon16.png"));
+      response.writeHead(200, {
+        "Content-Type": "image/webp",
+        "Content-Length": String(icon.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : icon);
+      return;
+    }
+    if (url.pathname === "/files/structured-poster.webp") {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {
         "Content-Type": "image/webp",

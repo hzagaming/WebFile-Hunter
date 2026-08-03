@@ -27,6 +27,7 @@ export function shouldKeepPageResource(resource: RawResource): boolean {
     looksLikeFileUrl(resource.url) ||
     Boolean(resource.mimeType) ||
     Boolean(resource.hasDownload) ||
+    Boolean(resource.resourceHint) ||
     resource.source === "PERFORMANCE_ENTRY" ||
     RESOURCE_TAGS.has(resource.tagName ?? "")
   );
@@ -94,6 +95,7 @@ export async function handlePageScanResult(
   const settings = await getSettings();
   const sourcePageUrl = isExternalFrame ? session.startUrl : result.pageUrl;
   const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
+    if (resource.resourceHint === "image" && !settings.scanImages) return [];
     try {
       const candidate = createFileCandidate({
         url: resource.url,
@@ -105,6 +107,7 @@ export async function handlePageScanResult(
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
         ...(resource.hasDownload ? { hasDownload: true } : {}),
+        ...(resource.resourceHint ? { explicitResource: true } : {}),
         customExtensions: settings.customExtensions,
         customMimeTypes: settings.customMimeTypes
       });

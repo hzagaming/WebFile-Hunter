@@ -240,6 +240,7 @@ async function recordCandidates(
   const settings = await getSettings();
   const candidates = [];
   for (const resource of resources) {
+    if (resource.resourceHint === "image" && !settings.scanImages) continue;
     let metadata;
     if (session.config.probeMetadata && !resource.isExternal) {
       try {
@@ -263,6 +264,7 @@ async function recordCandidates(
         parentUrl: pageUrl,
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
         ...(resource.hasDownload ? { hasDownload: true } : {}),
+        ...(resource.resourceHint ? { explicitResource: true } : {}),
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         ...(metadata?.finalUrl ? { finalUrl: metadata.finalUrl } : {}),
         ...(metadata?.mimeType ? { mimeType: metadata.mimeType } : {}),

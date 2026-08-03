@@ -1,3 +1,5 @@
+import { discoverScanRoots } from "./scan-roots";
+
 export interface ContentMonitor {
   stop(): void;
 }
@@ -9,7 +11,8 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
     debounce = window.setTimeout(onBatch, 300);
   };
   const mutationObserver = new MutationObserver(schedule);
-  mutationObserver.observe(document.documentElement, {
+  const observedRoots = new Set<Node>();
+  const mutationOptions: MutationObserverInit = {
     subtree: true,
     childList: true,
     attributes: true,
@@ -40,7 +43,21 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "lazy-src",
       "style"
     ]
-  });
+  };
+  const syncRoots = (): boolean => {
+    let added = false;
+    for (const root of discoverScanRoots()) {
+      if (observedRoots.has(root)) continue;
+      mutationObserver.observe(root, mutationOptions);
+      observedRoots.add(root);
+      added = true;
+    }
+    return added;
+  };
+  syncRoots();
+  const rootInterval = window.setInterval(() => {
+    if (syncRoots()) schedule();
+  }, 2_000);
   const performanceObserver = new PerformanceObserver(schedule);
   performanceObserver.observe({ type: "resource", buffered: true });
   const timeout = window.setTimeout(() => stop(), durationMs);
@@ -48,6 +65,7 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
   const stop = (): void => {
     mutationObserver.disconnect();
     performanceObserver.disconnect();
+    window.clearInterval(rootInterval);
     window.clearTimeout(timeout);
     if (debounce !== undefined) window.clearTimeout(debounce);
   };

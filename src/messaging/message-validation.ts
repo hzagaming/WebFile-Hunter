@@ -40,6 +40,7 @@ const rawResource = z
     attribute: z.string().max(64).optional(),
     mimeType: z.string().max(256).optional(),
     hasDownload: z.boolean().optional(),
+    resourceHint: z.enum(["image", "resource"]).optional(),
     isExternal: z.boolean()
   })
   .strict();

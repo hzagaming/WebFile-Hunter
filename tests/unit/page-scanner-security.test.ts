@@ -94,6 +94,32 @@ describe("handlePageScanResult security", () => {
     );
   });
 
+  it("保留显式资源提示并提升无扩展名结果置信度", async () => {
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+
+    await handlePageScanResult(
+      "session-fixture",
+      {
+        pageUrl: "https://example.test/page",
+        title: "page",
+        resources: [
+          {
+            url: "https://example.test/api/opaque",
+            source: "DOM_ATTRIBUTE",
+            tagName: "a",
+            resourceHint: "resource",
+            isExternal: false
+          }
+        ],
+        pages: []
+      },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toMatchObject({ confidence: 70 });
+  });
+
   it("已授予完整权限时当前页扫描也接受跨域 frame", async () => {
     mocks.hasAllSitesPermission.mockResolvedValue(true);
 
