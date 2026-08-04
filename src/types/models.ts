@@ -113,6 +113,17 @@ export interface DownloadTask {
   updatedAt: number;
 }
 
+export interface PageTextDocument {
+  id: string;
+  pageUrl: string;
+  title: string;
+  content: string;
+  language?: string;
+  characterCount: number;
+  capturedAt: number;
+  truncated: boolean;
+}
+
 export interface ScanProgress {
   sessionId: string;
   status: ScanStatus;

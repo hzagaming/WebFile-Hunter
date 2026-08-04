@@ -45,4 +45,46 @@ describe("extension message validation", () => {
       }).success
     ).toBe(false);
   });
+
+  it("校验初次正文并拒绝动态批次携带正文或超长内容", () => {
+    const base = {
+      sessionId: "session-text",
+      result: {
+        pageUrl: "https://example.test/",
+        title: "页面",
+        resources: [],
+        pages: []
+      }
+    };
+    expect(
+      validateExtensionRequest({
+        type: "CONTENT_SCAN_RESULT",
+        payload: {
+          ...base,
+          result: {
+            ...base.result,
+            text: { content: "公开正文", language: "zh-CN", truncated: false }
+          }
+        }
+      }).success
+    ).toBe(true);
+    expect(
+      validateExtensionRequest({
+        type: "CONTENT_RESOURCE_BATCH",
+        payload: {
+          ...base,
+          result: { ...base.result, text: { content: "重复正文", truncated: false } }
+        }
+      }).success
+    ).toBe(false);
+    expect(
+      validateExtensionRequest({
+        type: "CONTENT_SCAN_RESULT",
+        payload: {
+          ...base,
+          result: { ...base.result, text: { content: "字".repeat(200_001), truncated: true } }
+        }
+      }).success
+    ).toBe(false);
+  });
 });

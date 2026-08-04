@@ -13,7 +13,7 @@ document.body.append(temporaryAudio);
 const resourceHost = document.createElement("div");
 resourceHost.id = "resource-shadow-host";
 resourceHost.attachShadow({ mode: "open" }).innerHTML =
-  '<video preload="none" src="/files/shadow-video.mp4"></video>';
+  '<p>开放 Shadow 正文</p><video preload="none" src="/files/shadow-video.mp4"></video>';
 document.body.append(resourceHost);
 
 const lateShadowHost = document.createElement("div");

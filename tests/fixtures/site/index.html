@@ -18,7 +18,25 @@
   </head>
   <body>
     <h1>WebFile Hunter 演示站</h1>
-    <p>该页面只包含测试占位资源。</p>
+    <main>
+      <p>该页面只包含测试占位资源。</p>
+      <p id="public-text-fixture">WebFile Hunter 正文提取夹具 alpha beta beta</p>
+    </main>
+    <p hidden>hidden-text-secret</p>
+    <p aria-hidden="true">aria-text-secret</p>
+    <p style="display: none">display-text-secret</p>
+    <input aria-label="隐私输入" value="input-text-secret" />
+    <textarea aria-label="隐私文本框">textarea-text-secret</textarea>
+    <div contenteditable="true">editable-text-secret</div>
+    <div
+      data-srcset="/files/lazy-small.webp 1x, /files/lazy-large.webp 2x"
+      data-bg="/files/lazy-background.avif"
+      data-file-url="/files/lazy-manual.pdf"
+    ></div>
+    <svg aria-hidden="true">
+      <use href="/files/icons.svg#play"></use>
+      <feImage href="/files/filter.png"></feImage>
+    </svg>
     <a href="/files/sample.txt">示例文本</a>
     <a href="/files/document.pdf">示例 PDF</a>
     <a type="application/pdf" href="/api/typed-document">无后缀 PDF</a>

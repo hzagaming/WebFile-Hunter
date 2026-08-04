@@ -13,19 +13,21 @@ interface Props {
   snapshot: AppSnapshot;
   refresh: (sessionId?: string) => Promise<void>;
   openResults: () => void;
+  openText?: () => void;
 }
 
-export function HistoryPage({ snapshot, refresh, openResults }: Props) {
+export function HistoryPage({ snapshot, refresh, openResults, openText }: Props) {
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [busy, setBusy] = useState<string>();
   const fail = (error: unknown, fallback: string): void =>
     setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
-  const open = async (sessionId: string): Promise<void> => {
+  const open = async (sessionId: string, destination: "results" | "text"): Promise<void> => {
     setBusy(`open:${sessionId}`);
     setFeedback(undefined);
     try {
       await refresh(sessionId);
-      openResults();
+      if (destination === "results") openResults();
+      else openText?.();
     } catch (error) {
       fail(error, "无法打开扫描结果。");
     } finally {
@@ -174,10 +176,19 @@ export function HistoryPage({ snapshot, refresh, openResults }: Props) {
               <button
                 type="button"
                 disabled={busy !== undefined}
-                onClick={() => void open(session.id)}
+                onClick={() => void open(session.id, "results")}
               >
                 打开结果
               </button>
+              {openText ? (
+                <button
+                  type="button"
+                  disabled={busy !== undefined}
+                  onClick={() => void open(session.id, "text")}
+                >
+                  查看文字
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={busy !== undefined}

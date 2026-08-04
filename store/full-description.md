@@ -9,6 +9,7 @@ WebFile Hunter 帮助用户在主动操作后发现网页中公开引用的 TXT�
 - 显式授权后完整嗅探当前标签页的同站及第三方 CDN、媒体、接口和 frame 请求；
 - 在明确授权后通过静态 HTML、robots.txt Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做同源限速递归；
 - 识别 Open Graph、Twitter Card、itemprop 与动态媒体属性，并按页面声明解码常见字符集；
+- 在独立文本栏提取公开可见正文，按页面搜索、复制或导出 TXT，并排除显式隐藏内容和用户输入；
 - 通过扩展名、MIME 和 Content-Disposition 识别无后缀文件；
 - 分类、正则筛选、批量选择、复制、TXT/CSV/JSON 导出；
 - 用户选择后加入下载队列并手动开始；

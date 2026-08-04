@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_PAGE_TEXT_CHARACTERS, MAX_TEXT_LANGUAGE_LENGTH } from "@/core/page-text-policy";
 
 const sessionId = z.string().min(3).max(128);
 const tabId = z.number().int().nonnegative();
@@ -63,6 +64,17 @@ const pageScanResult = z
       .max(20_000)
   })
   .strict();
+
+const pageScanResultWithText = pageScanResult.extend({
+  text: z
+    .object({
+      content: z.string().max(MAX_PAGE_TEXT_CHARACTERS),
+      language: z.string().max(MAX_TEXT_LANGUAGE_LENGTH).optional(),
+      truncated: z.boolean()
+    })
+    .strict()
+    .optional()
+});
 
 const settings = z
   .object({
@@ -146,7 +158,7 @@ export const extensionRequestSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("CONTENT_SCAN_RESULT"),
-      payload: z.object({ sessionId, result: pageScanResult }).strict()
+      payload: z.object({ sessionId, result: pageScanResultWithText }).strict()
     })
     .strict(),
   z

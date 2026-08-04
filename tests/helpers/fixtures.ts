@@ -49,6 +49,7 @@ export function appSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
   return {
     sessions: [],
     files: [],
+    textDocuments: [],
     downloads: [],
     settings: structuredClone(DEFAULT_SETTINGS),
     allSitesAccess: false,

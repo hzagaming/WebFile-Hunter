@@ -32,15 +32,22 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "type",
       "xlink:href",
       "data-src",
+      "data-srcset",
       "data-url",
       "data-href",
       "data-download",
       "data-file",
+      "data-file-url",
       "data-audio",
       "data-video",
       "data-poster",
       "data-original",
+      "data-lazy-src",
       "lazy-src",
+      "data-bg",
+      "data-background",
+      "data-image",
+      "data-thumb",
       "style"
     ]
   };

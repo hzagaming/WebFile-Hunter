@@ -11,7 +11,8 @@ import {
   getSession,
   listFiles,
   putAppError,
-  putFiles
+  putFiles,
+  putPageText
 } from "@/database/db";
 import { getSettings } from "@/database/settings";
 import { createId } from "@/utils/id";
@@ -340,6 +341,19 @@ async function processPage(
   const finalUrl = metadata.finalUrl;
   const extracted = extractLinksFromHtml(html, finalUrl);
   await recordCandidates(session, finalUrl, extracted.title, extracted.resources, active);
+  if (extracted.text?.content) {
+    const document = await putPageText(session.id, {
+      pageUrl: finalUrl,
+      title: extracted.title,
+      content: extracted.text.content,
+      ...(extracted.text.language ? { language: extracted.text.language } : {}),
+      capturedAt: Date.now(),
+      truncated: extracted.text.truncated
+    });
+    if (document) {
+      broadcast({ type: "TEXT_CAPTURED", payload: { sessionId: session.id, document } });
+    }
+  }
   if (!extracted.noFollow && item.depth < session.config.maxDepth) {
     const pages = [...extracted.pages];
     if (extracted.metaRefresh) {

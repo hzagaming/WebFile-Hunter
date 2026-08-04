@@ -1,6 +1,7 @@
 import { scanDocument } from "./dom-scanner";
 import { startContentMonitor, type ContentMonitor } from "./mutation-monitor";
 import type { ExtensionRequest } from "@/messaging/message-types";
+import { extractPageText } from "./page-text-extractor";
 
 interface ContentState {
   sessionId: string;
@@ -21,7 +22,13 @@ async function sendResult(
 ): Promise<void> {
   const message: ExtensionRequest = {
     type,
-    payload: { sessionId: state.sessionId, result: scanDocument(state.options) }
+    payload: {
+      sessionId: state.sessionId,
+      result: {
+        ...scanDocument(state.options),
+        ...(type === "CONTENT_SCAN_RESULT" ? { text: extractPageText() } : {})
+      }
+    }
   };
   try {
     await chrome.runtime.sendMessage(message);

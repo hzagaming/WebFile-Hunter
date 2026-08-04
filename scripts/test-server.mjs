@@ -71,7 +71,7 @@ export async function startTestServer() {
     if (url.pathname === "/cross-frame") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
-        '<!doctype html><title>跨域 Frame</title><video preload="none" src="/files/frame-video.mp4" poster="/files/frame-poster.webp"></video>'
+        '<!doctype html><title>跨域 Frame</title><p>跨域 Frame 公开正文</p><input value="frame-input-secret"><video preload="none" src="/files/frame-video.mp4" poster="/files/frame-poster.webp"></video>'
       );
       return;
     }
@@ -124,6 +124,25 @@ export async function startTestServer() {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {
         "Content-Type": "image/webp",
+        "Content-Length": String(icon.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : icon);
+      return;
+    }
+    if (url.pathname === "/files/icons.svg") {
+      const content =
+        '<svg xmlns="http://www.w3.org/2000/svg"><symbol id="play"><path d="M0 0l8 4-8 4z"/></symbol></svg>';
+      response.writeHead(200, {
+        "Content-Type": "image/svg+xml",
+        "Content-Length": String(Buffer.byteLength(content))
+      });
+      response.end(request.method === "HEAD" ? undefined : content);
+      return;
+    }
+    if (url.pathname === "/files/filter.png") {
+      const icon = await readFile(resolve("public/icons/icon16.png"));
+      response.writeHead(200, {
+        "Content-Type": "image/png",
         "Content-Length": String(icon.length)
       });
       response.end(request.method === "HEAD" ? undefined : icon);

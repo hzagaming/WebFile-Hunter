@@ -2,6 +2,7 @@ import type {
   AppSettings,
   DownloadTask,
   FileCandidate,
+  PageTextDocument,
   ScanConfig,
   ScanProgress,
   ScanSession
@@ -44,6 +45,7 @@ export type ExtensionEvent =
   | { type: "ACTIVE_CONTEXT_CHANGED" }
   | { type: "SCAN_PROGRESS"; payload: ScanProgress }
   | { type: "FILES_DISCOVERED"; payload: { sessionId: string; files: FileCandidate[] } }
+  | { type: "TEXT_CAPTURED"; payload: { sessionId: string; document: PageTextDocument } }
   | { type: "DOWNLOADS_UPDATED"; payload: DownloadTask[] }
   | { type: "SESSION_UPDATED"; payload: ScanSession }
   | { type: "APP_ERROR"; payload: { code: string; message: string; sessionId?: string } };
@@ -55,6 +57,7 @@ export interface AppSnapshot {
   activeSession?: ScanSession;
   sessions: ScanSession[];
   files: FileCandidate[];
+  textDocuments: PageTextDocument[];
   downloads: DownloadTask[];
   settings: AppSettings;
   allSitesAccess: boolean;

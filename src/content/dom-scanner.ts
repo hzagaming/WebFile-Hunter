@@ -29,23 +29,32 @@ const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["object", ["data"]],
   ["img", ["src", "srcset"]],
   ["image", ["href", "xlink:href"]],
+  ["use", ["href", "xlink:href"]],
+  ["feImage", ["href", "xlink:href"]],
   ["link", ["href"]],
   ["script", ["src"]],
   ["input", ["src"]],
   ["form", ["action"]],
   [
-    "[data-src],[data-url],[data-href],[data-download],[data-file],[data-audio],[data-video],[data-poster],[data-original],[lazy-src]",
+    "[data-src],[data-srcset],[data-url],[data-href],[data-download],[data-file],[data-file-url],[data-audio],[data-video],[data-poster],[data-original],[data-lazy-src],[lazy-src],[data-bg],[data-background],[data-image],[data-thumb]",
     [
       "data-src",
+      "data-srcset",
       "data-url",
       "data-href",
       "data-download",
       "data-file",
+      "data-file-url",
       "data-audio",
       "data-video",
       "data-poster",
       "data-original",
-      "lazy-src"
+      "data-lazy-src",
+      "lazy-src",
+      "data-bg",
+      "data-background",
+      "data-image",
+      "data-thumb"
     ]
   ]
 ];
@@ -123,7 +132,7 @@ export function scanDocument(
         if (resourceHint === "image" && options.includeImages === false) continue;
         const raw = element.getAttribute(attribute);
         if (!raw) continue;
-        const values = attribute === "srcset" ? splitSrcset(raw) : [raw];
+        const values = ["srcset", "data-srcset"].includes(attribute) ? splitSrcset(raw) : [raw];
         for (const value of values) {
           const url = normalize(value);
           if (!url) continue;

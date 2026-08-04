@@ -5,12 +5,14 @@ import { ResultsPage } from "./pages/ResultsPage";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TextPage } from "./pages/TextPage";
 
-type Tab = "scan" | "results" | "downloads" | "history" | "settings";
+type Tab = "scan" | "results" | "text" | "downloads" | "history" | "settings";
 
 const tabs: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
   { id: "scan", label: "扫描", icon: "⌁" },
   { id: "results", label: "结果", icon: "▤" },
+  { id: "text", label: "文本", icon: "≡" },
   { id: "downloads", label: "下载", icon: "⇩" },
   { id: "history", label: "历史", icon: "◷" },
   { id: "settings", label: "设置", icon: "⚙" }
@@ -74,6 +76,8 @@ export function App() {
           />
         ) : tab === "results" ? (
           <ResultsPage snapshot={state.snapshot} refresh={state.refresh} />
+        ) : tab === "text" ? (
+          <TextPage snapshot={state.snapshot} refresh={state.refresh} />
         ) : tab === "downloads" ? (
           <DownloadsPage
             snapshot={state.snapshot}
@@ -85,6 +89,7 @@ export function App() {
             snapshot={state.snapshot}
             refresh={state.refresh}
             openResults={() => setTab("results")}
+            openText={() => setTab("text")}
           />
         ) : (
           <SettingsPage

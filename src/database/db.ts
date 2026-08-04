@@ -4,13 +4,27 @@ import type {
   CrawlQueueItem,
   DownloadTask,
   FileCandidate,
+  PageTextDocument,
   ScanSession,
   StoredAppError
 } from "@/types/models";
+import {
+  MAX_PAGE_TEXT_CHARACTERS,
+  MAX_SESSION_TEXT_CHARACTERS,
+  MAX_SESSION_TEXT_DOCUMENTS,
+  MAX_TEXT_LANGUAGE_LENGTH
+} from "@/core/page-text-policy";
+import { createId } from "@/utils/id";
 
 interface StoredFile extends FileCandidate {
   sessionId: string;
 }
+
+interface StoredPageText extends PageTextDocument {
+  sessionId: string;
+}
+
+export type PageTextInput = Omit<PageTextDocument, "id" | "characterCount">;
 
 export interface StoredQueueItem extends CrawlQueueItem {
   id: string;
@@ -34,6 +48,11 @@ interface WebFileHunterDb extends DBSchema {
   files: {
     key: string;
     value: StoredFile;
+    indexes: { "by-session": string; "by-session-url": [string, string] };
+  };
+  texts: {
+    key: string;
+    value: StoredPageText;
     indexes: { "by-session": string; "by-session-url": [string, string] };
   };
   queue: {
@@ -65,32 +84,40 @@ interface WebFileHunterDb extends DBSchema {
 let databasePromise: Promise<IDBPDatabase<WebFileHunterDb>> | undefined;
 
 export function getDatabase(): Promise<IDBPDatabase<WebFileHunterDb>> {
-  databasePromise ??= openDB<WebFileHunterDb>("webfile-hunter", 1, {
-    upgrade(database) {
-      const sessions = database.createObjectStore("sessions", { keyPath: "id" });
-      sessions.createIndex("by-created", "createdAt");
-      sessions.createIndex("by-status", "status");
+  databasePromise ??= openDB<WebFileHunterDb>("webfile-hunter", 2, {
+    upgrade(database, oldVersion) {
+      if (oldVersion < 1) {
+        const sessions = database.createObjectStore("sessions", { keyPath: "id" });
+        sessions.createIndex("by-created", "createdAt");
+        sessions.createIndex("by-status", "status");
 
-      const files = database.createObjectStore("files", { keyPath: "id" });
-      files.createIndex("by-session", "sessionId");
-      files.createIndex("by-session-url", ["sessionId", "canonicalUrl"], { unique: true });
+        const files = database.createObjectStore("files", { keyPath: "id" });
+        files.createIndex("by-session", "sessionId");
+        files.createIndex("by-session-url", ["sessionId", "canonicalUrl"], { unique: true });
 
-      const queue = database.createObjectStore("queue", { keyPath: "id" });
-      queue.createIndex("by-session", "sessionId");
-      queue.createIndex("by-session-order", ["sessionId", "order"]);
+        const queue = database.createObjectStore("queue", { keyPath: "id" });
+        queue.createIndex("by-session", "sessionId");
+        queue.createIndex("by-session-order", ["sessionId", "order"]);
 
-      const visited = database.createObjectStore("visited", { keyPath: "id" });
-      visited.createIndex("by-session", "sessionId");
+        const visited = database.createObjectStore("visited", { keyPath: "id" });
+        visited.createIndex("by-session", "sessionId");
 
-      const errors = database.createObjectStore("errors", { keyPath: "id" });
-      errors.createIndex("by-session", "sessionId");
-      errors.createIndex("by-created", "createdAt");
+        const errors = database.createObjectStore("errors", { keyPath: "id" });
+        errors.createIndex("by-session", "sessionId");
+        errors.createIndex("by-created", "createdAt");
 
-      const downloads = database.createObjectStore("downloads", { keyPath: "id" });
-      downloads.createIndex("by-status", "status");
-      downloads.createIndex("by-created", "createdAt");
+        const downloads = database.createObjectStore("downloads", { keyPath: "id" });
+        downloads.createIndex("by-status", "status");
+        downloads.createIndex("by-created", "createdAt");
 
-      database.createObjectStore("checkpoints", { keyPath: "sessionId" });
+        database.createObjectStore("checkpoints", { keyPath: "sessionId" });
+      }
+
+      if (oldVersion < 2) {
+        const texts = database.createObjectStore("texts", { keyPath: "id" });
+        texts.createIndex("by-session", "sessionId");
+        texts.createIndex("by-session-url", ["sessionId", "pageUrl"], { unique: true });
+      }
     }
   });
   return databasePromise;
@@ -144,6 +171,57 @@ export async function getFile(id: string): Promise<FileCandidate | undefined> {
   const { sessionId: storedSessionId, ...candidate } = row;
   void storedSessionId;
   return candidate;
+}
+
+function publicPageText(row: StoredPageText): PageTextDocument {
+  const { sessionId, ...document } = row;
+  void sessionId;
+  return document;
+}
+
+export async function putPageText(
+  sessionId: string,
+  input: PageTextInput
+): Promise<PageTextDocument | undefined> {
+  if (!input.content.trim()) return undefined;
+  const database = await getDatabase();
+  const transaction = database.transaction("texts", "readwrite");
+  const index = transaction.store.index("by-session");
+  const existing = await transaction.store.index("by-session-url").get([sessionId, input.pageUrl]);
+  const rows = await index.getAll(sessionId);
+  const otherRows = rows.filter((row) => row.id !== existing?.id);
+  if (!existing && otherRows.length >= MAX_SESSION_TEXT_DOCUMENTS) {
+    await transaction.done;
+    return undefined;
+  }
+  const usedCharacters = otherRows.reduce((total, row) => total + row.characterCount, 0);
+  const availableCharacters = Math.max(0, MAX_SESSION_TEXT_CHARACTERS - usedCharacters);
+  const allowedCharacters = Math.min(MAX_PAGE_TEXT_CHARACTERS, availableCharacters);
+  if (!allowedCharacters) {
+    await transaction.done;
+    return undefined;
+  }
+  const content = input.content.slice(0, allowedCharacters);
+  const language = input.language?.trim().slice(0, MAX_TEXT_LANGUAGE_LENGTH);
+  const stored: StoredPageText = {
+    id: existing?.id ?? createId("text"),
+    sessionId,
+    pageUrl: input.pageUrl,
+    title: input.title.slice(0, 2048),
+    content,
+    ...(language ? { language } : {}),
+    characterCount: content.length,
+    capturedAt: input.capturedAt,
+    truncated: input.truncated || content.length < input.content.length
+  };
+  await transaction.store.put(stored);
+  await transaction.done;
+  return publicPageText(stored);
+}
+
+export async function listPageTexts(sessionId: string): Promise<PageTextDocument[]> {
+  const rows = await (await getDatabase()).getAllFromIndex("texts", "by-session", sessionId);
+  return rows.map(publicPageText).sort((first, second) => second.capturedAt - first.capturedAt);
 }
 
 export async function deleteSessionFiles(
@@ -221,10 +299,10 @@ export async function putAppError(error: StoredAppError): Promise<void> {
 export async function deleteSessionData(sessionId: string): Promise<void> {
   const database = await getDatabase();
   const transaction = database.transaction(
-    ["sessions", "files", "queue", "visited", "errors", "checkpoints"],
+    ["sessions", "files", "texts", "queue", "visited", "errors", "checkpoints"],
     "readwrite"
   );
-  const indexedStores = ["files", "queue", "visited", "errors"] as const;
+  const indexedStores = ["files", "texts", "queue", "visited", "errors"] as const;
   for (const storeName of indexedStores) {
     const store = transaction.objectStore(storeName);
     const keys = await store.index("by-session").getAllKeys(sessionId);
@@ -247,7 +325,15 @@ export async function purgeExpiredSessions(retentionDays: number): Promise<numbe
 
 export async function clearHistoryData(): Promise<void> {
   const database = await getDatabase();
-  const names = ["sessions", "files", "queue", "visited", "errors", "checkpoints"] as const;
+  const names = [
+    "sessions",
+    "files",
+    "texts",
+    "queue",
+    "visited",
+    "errors",
+    "checkpoints"
+  ] as const;
   const transaction = database.transaction(names, "readwrite");
   await Promise.all(names.map((name) => transaction.objectStore(name).clear()));
   await transaction.done;
@@ -258,6 +344,7 @@ export async function clearDatabase(): Promise<void> {
   const names = [
     "sessions",
     "files",
+    "texts",
     "queue",
     "visited",
     "errors",

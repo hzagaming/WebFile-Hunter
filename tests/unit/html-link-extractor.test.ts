@@ -132,6 +132,29 @@ describe("extractLinksFromHtml", () => {
     );
   });
 
+  it("从静态 HTML 发现扩展懒加载属性与 SVG 引用", () => {
+    const result = extractLinksFromHtml(
+      `
+        <img data-srcset="/small.webp 1x, /large.webp 2x">
+        <div data-lazy-src="/lazy.bin" data-bg="/bg.avif" data-file-url="/doc.pdf"></div>
+        <svg><use href="/icons.svg#play"></use><feImage href="/filter.png"></feImage></svg>
+      `,
+      "https://example.test/article"
+    );
+
+    expect(result.resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/small.webp",
+        "https://example.test/large.webp",
+        "https://example.test/lazy.bin",
+        "https://example.test/bg.avif",
+        "https://example.test/doc.pdf",
+        "https://example.test/icons.svg",
+        "https://example.test/filter.png"
+      ])
+    );
+  });
+
   it("忽略非 GET 表单 action 但保留普通 GET 页面入口", () => {
     const result = extractLinksFromHtml(
       [
@@ -161,5 +184,52 @@ describe("extractLinksFromHtml", () => {
     );
 
     expect(result.noFollow).toBe(true);
+  });
+
+  it("提取递归页面正文并排除脚本、样式、模板与表单值", () => {
+    const result = extractLinksFromHtml(
+      `
+        <html lang="zh-CN"><head><title>正文页</title></head><body>
+          <main><h1>公开标题</h1><p>递归 页面 正文</p></main>
+          <script>script-secret</script><style>style-secret</style>
+          <template>template-secret</template>
+          <input value="input-secret"><textarea>textarea-secret</textarea>
+          <div contenteditable="true">draft-secret</div>
+          <p hidden>hidden-secret</p>
+        </body></html>
+      `,
+      "https://example.test/article"
+    );
+
+    expect(result.text).toMatchObject({ language: "zh-CN", truncated: false });
+    expect(result.text.content).toContain("公开标题");
+    expect(result.text.content).toContain("递归 页面 正文");
+    for (const secret of [
+      "script-secret",
+      "style-secret",
+      "template-secret",
+      "input-secret",
+      "textarea-secret",
+      "draft-secret",
+      "hidden-secret"
+    ]) {
+      expect(result.text.content).not.toContain(secret);
+    }
+  });
+
+  it("递归正文保留半透明文字并排除折叠 details 内容", () => {
+    const result = extractLinksFromHtml(
+      `
+        <p style="opacity: 0.5">半透明可见正文</p>
+        <details><summary>折叠摘要</summary><p>closed-details-secret</p></details>
+        <details open><summary>展开摘要</summary><p>展开公开正文</p></details>
+      `,
+      "https://example.test/article"
+    );
+
+    expect(result.text.content).toContain("半透明可见正文");
+    expect(result.text.content).toContain("折叠摘要");
+    expect(result.text.content).toContain("展开公开正文");
+    expect(result.text.content).not.toContain("closed-details-secret");
   });
 });

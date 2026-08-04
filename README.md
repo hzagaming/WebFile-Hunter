@@ -7,6 +7,7 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 ## 功能
 
 - 当前页面扫描：DOM 属性、`download`、`srcset`、Open Graph、JSON-LD、itemprop、enclosure、template、开放 Shadow DOM、内联/可访问样式表、Performance Resource Timing、可注入 iframe。
+- 网页文字提取：独立侧栏按当前页、权限允许的 frame 与递归页面保存公开可见正文，支持搜索、复制和 TXT 导出；排除隐藏内容与用户输入。
 - 完整实时嗅探：用户明确授权后，仅观察当前标签页的同站与第三方 CDN、媒体、接口及 frame 请求，合并 `requestId` 对应的请求与响应头，并在同源导航后按剩余时长继续监听。
 - 同源递归扫描：直接 GET 静态 HTML，结合页面链接、robots.txt 声明的 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度/页面/并发/速率硬限制、超时、重试、暂停、恢复和取消。
 - 文件识别：扩展名、MIME、Content-Disposition、标签上下文、查询参数、请求类型和响应大小综合评分。
@@ -35,10 +36,10 @@ src/
 ├── background/   Service Worker、消息路由、监听、爬虫、权限、下载、检查点
 ├── content/      当前页面 DOM/CSS/Performance 扫描与动态资源观察
 ├── core/         URL、安全、分类、去重、HTML 提取、文件名处理
-├── database/     IndexedDB v1 数据库与本地设置
+├── database/     IndexedDB v2 数据库与本地设置
 ├── messaging/    可判别消息联合、Zod 验证、消息客户端
 ├── export/       TXT、CSV、JSON 导出
-├── sidepanel/    主界面、虚拟结果列表、扫描/下载/历史/设置页
+├── sidepanel/    主界面、虚拟结果列表、扫描/结果/文本/下载/历史/设置页
 ├── popup/        快速扫描、监听与打开侧边栏
 └── options/      独立设置页
 ```
@@ -65,7 +66,7 @@ npm run test:e2e
 npm run package
 ```
 
-`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、JSON-LD/显式 MIME 资源、跨域资源嗅探、Sitemap Index/raw gzip/SPA 递归、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
+`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、JSON-LD/显式 MIME 资源、跨域资源嗅探、Sitemap Index/raw gzip/SPA 递归、网页文字隐私过滤、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
 
 脚本会自动探测 macOS、Windows 和 Linux 的常见 Edge 安装路径；非标准安装可设置 `EDGE_PATH`。
 
@@ -129,6 +130,7 @@ npm run build
 ## 数据与安全
 
 - 扫描数据不上传，不包含遥测、广告 SDK 或账户系统。
+- 网页文字只提取公开可见正文，不读取显式隐藏元素、输入框、密码、文本框、下拉选项或可编辑草稿；不执行 OCR。
 - URL 在后台重新解析与验证；递归请求必须属于任务授权 origin。
 - 默认阻止本机、私网、链路本地、URL 凭据、危险端口和登出/删除/支付类路径。
 - 所有跨上下文消息由 Zod 严格验证；网页不能发送任意 URL 触发后台 fetch。
@@ -154,7 +156,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.2.0.zip
+release/webfile-hunter-v1.3.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。

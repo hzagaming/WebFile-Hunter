@@ -12,13 +12,15 @@ const mocks = vi.hoisted(() => ({
   patchSession: vi.fn(),
   hasAllSitesPermission: vi.fn(),
   putFiles:
-    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>()
+    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>(),
+  putPageText: vi.fn()
 }));
 
 vi.mock("@/database/db", () => ({
   getSession: mocks.getSession,
   listFiles: mocks.listFiles,
-  putFiles: mocks.putFiles
+  putFiles: mocks.putFiles,
+  putPageText: mocks.putPageText
 }));
 vi.mock("@/database/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
@@ -44,6 +46,7 @@ beforeEach(() => {
   mocks.hasAllSitesPermission.mockResolvedValue(false);
   mocks.enqueueCrawlerPages.mockReturnValue(0);
   mocks.putFiles.mockResolvedValue([]);
+  mocks.putPageText.mockResolvedValue(undefined);
   mocks.listFiles.mockResolvedValue([]);
 });
 
@@ -225,5 +228,55 @@ describe("handlePageScanResult security", () => {
         false
       )
     ).rejects.toThrow("已经停止");
+  });
+
+  it("只在安全校验通过的初次结果中保存正文并广播更新", async () => {
+    mocks.putPageText.mockResolvedValue({
+      id: "text-1",
+      pageUrl: "https://example.test/page",
+      title: "page",
+      content: "公开正文",
+      characterCount: 4,
+      capturedAt: 1,
+      truncated: false
+    });
+
+    await handlePageScanResult(
+      "session-fixture",
+      {
+        pageUrl: "https://example.test/page",
+        title: "page",
+        resources: [],
+        pages: [],
+        text: { content: "公开正文", language: "zh-CN", truncated: false }
+      },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
+    expect(mocks.putPageText).toHaveBeenCalledWith(
+      "session-fixture",
+      expect.objectContaining({ content: "公开正文", language: "zh-CN" })
+    );
+    expect(mocks.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_CAPTURED" })
+    );
+
+    mocks.putPageText.mockClear();
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        {
+          pageUrl: "https://other.test/",
+          title: "other",
+          resources: [],
+          pages: [],
+          text: { content: "不可信正文", truncated: false }
+        },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).rejects.toThrow("origin");
+    expect(mocks.putPageText).not.toHaveBeenCalled();
   });
 });

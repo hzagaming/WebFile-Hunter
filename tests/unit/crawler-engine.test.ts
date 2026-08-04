@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   probeUrlMetadata: vi.fn(),
   putAppError: vi.fn(),
   putFiles: vi.fn(),
+  putPageText: vi.fn(),
   readLimitedText: vi.fn(),
   safeFetch:
     vi.fn<(url: string, init: RequestInit, options: SafeFetchOptions) => Promise<Response>>()
@@ -29,7 +30,8 @@ vi.mock("@/database/db", () => ({
   getSession: mocks.getSession,
   listFiles: mocks.listFiles,
   putAppError: mocks.putAppError,
-  putFiles: mocks.putFiles
+  putFiles: mocks.putFiles,
+  putPageText: mocks.putPageText
 }));
 vi.mock("@/database/settings", () => ({
   getSettings: vi.fn().mockResolvedValue({ customExtensions: {}, customMimeTypes: {} })
@@ -88,6 +90,7 @@ beforeEach(() => {
   mocks.hasOriginPermission.mockResolvedValue(true);
   mocks.listFiles.mockResolvedValue([]);
   mocks.putFiles.mockResolvedValue([]);
+  mocks.putPageText.mockResolvedValue(undefined);
   mocks.probeUrlMetadata.mockImplementation(
     (url: string, options: SafeFetchOptions): Promise<ResourceMetadata> => {
       options.onRequestStart?.(url);
@@ -258,6 +261,48 @@ describe("crawler engine lifecycle", () => {
       "https://example.test/start",
       { method: "GET" },
       expect.any(Object)
+    );
+  });
+
+  it("保存递归 HTML 页面的正文并广播文本更新", async () => {
+    mocks.readLimitedText.mockResolvedValue("<title>递归页</title><main>递归公开正文</main>");
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(
+          new Response("<title>递归页</title><main>递归公开正文</main>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" }
+          })
+        );
+      }
+    );
+    mocks.putPageText.mockResolvedValue({
+      id: "text-recursive",
+      pageUrl: "https://example.test/start",
+      title: "递归页",
+      content: "递归公开正文",
+      characterCount: 6,
+      capturedAt: 1,
+      truncated: false
+    });
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.putPageText).toHaveBeenCalledWith(
+      recursive.id,
+      expect.objectContaining({ pageUrl: "https://example.test/start", content: "递归公开正文" })
+    );
+    expect(mocks.broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_CAPTURED" })
     );
   });
 

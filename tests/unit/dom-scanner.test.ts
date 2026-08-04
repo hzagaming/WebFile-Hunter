@@ -75,6 +75,37 @@ describe("scanDocument", () => {
     );
   });
 
+  it("发现常见懒加载背景、data-srcset 与 SVG 引用资源", () => {
+    document.body.innerHTML = `
+      <img data-srcset="/lazy-small.webp 1x, /lazy-large.webp 2x">
+      <div data-lazy-src="/lazy.bin" data-bg="/background.avif"></div>
+      <div data-background="/wallpaper.jpg" data-image="/image.png"></div>
+      <div data-thumb="/thumb.webp" data-file-url="/manual.pdf"></div>
+      <svg>
+        <use href="/icons.svg#play"></use>
+        <filter><feImage href="/filter.png"></feImage></filter>
+      </svg>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const urls = scanDocument({ includeStylesheets: false }).resources.map((item) => item.url);
+
+    expect(urls).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/lazy-small.webp`,
+        `${location.origin}/lazy-large.webp`,
+        `${location.origin}/lazy.bin`,
+        `${location.origin}/background.avif`,
+        `${location.origin}/wallpaper.jpg`,
+        `${location.origin}/image.png`,
+        `${location.origin}/thumb.webp`,
+        `${location.origin}/manual.pdf`,
+        `${location.origin}/icons.svg`,
+        `${location.origin}/filter.png`
+      ])
+    );
+  });
+
   it("只保留资源 link 并从资源元信息提取相对 URL", () => {
     document.head.innerHTML = `
       <link rel="canonical" href="/article">

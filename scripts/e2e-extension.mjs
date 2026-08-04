@@ -286,11 +286,16 @@ async function databaseRows(worker) {
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
           const database = request.result;
-          const transaction = database.transaction(["files", "sessions"], "readonly");
+          const transaction = database.transaction(["files", "sessions", "texts"], "readonly");
           const filesRequest = transaction.objectStore("files").getAll();
           const sessionsRequest = transaction.objectStore("sessions").getAll();
+          const textsRequest = transaction.objectStore("texts").getAll();
           transaction.oncomplete = () =>
-            resolvePromise({ files: filesRequest.result, sessions: sessionsRequest.result });
+            resolvePromise({
+              files: filesRequest.result,
+              sessions: sessionsRequest.result,
+              texts: textsRequest.result
+            });
           transaction.onerror = () => reject(transaction.error);
         };
       })
@@ -438,6 +443,23 @@ try {
           file.sessionId === currentSession.id &&
           file.canonicalUrl === `${server.origin}/files/shadow-video.mp4` &&
           file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/lazy-manual.pdf`
+      ) &&
+      rows.texts.some(
+        (document) =>
+          document.sessionId === currentSession.id &&
+          document.content.includes("WebFile Hunter 正文提取夹具 alpha beta beta") &&
+          document.content.includes("开放 Shadow 正文") &&
+          !document.content.includes("hidden-text-secret") &&
+          !document.content.includes("aria-text-secret") &&
+          !document.content.includes("display-text-secret") &&
+          !document.content.includes("input-text-secret") &&
+          !document.content.includes("textarea-text-secret") &&
+          !document.content.includes("editable-text-secret")
       )
   );
   const currentFiles = currentRows.files.filter((file) => file.sessionId === currentSession.id);
@@ -615,6 +637,9 @@ try {
   const recursiveFiles = recursiveRows.files.filter(
     (file) => file.sessionId === recursiveSession.id
   );
+  const recursiveTexts = recursiveRows.texts.filter(
+    (document) => document.sessionId === recursiveSession.id
+  );
   if (
     !completedRecursive ||
     completedRecursive.pagesProcessed < 5 ||
@@ -631,7 +656,8 @@ try {
       (file) =>
         file.canonicalUrl.endsWith("/files/shadow-video.mp4") &&
         file.sources.includes("DOM_ATTRIBUTE")
-    )
+    ) ||
+    !recursiveTexts.some((document) => document.content.includes("第一页递归公开正文"))
   ) {
     throw new Error(
       `递归扫描链路不完整：${JSON.stringify({ completedRecursive, files: recursiveFiles.length })}`
@@ -750,6 +776,44 @@ try {
     .locator(".history-card")
     .filter({ hasText: "当前页" })
     .first();
+  await currentHistoryCard.getByRole("button", { name: "查看文字" }).click();
+  await sidepanelPage.getByRole("heading", { name: "网页文字" }).waitFor();
+  await sidepanelPage
+    .getByText("WebFile Hunter 正文提取夹具 alpha beta beta", {
+      exact: false
+    })
+    .waitFor();
+  if (
+    await sidepanelPage
+      .getByText(/(?:hidden|aria|display|input|textarea|editable)-text-secret/)
+      .count()
+  ) {
+    throw new Error("文字页泄露隐藏内容、表单值或可编辑草稿。");
+  }
+  await sidepanelPage.getByRole("searchbox", { name: "搜索当前文字" }).fill("beta");
+  await sidepanelPage.getByText("2 处匹配", { exact: true }).waitFor();
+  await sidepanelPage.getByRole("button", { name: "复制当前", exact: true }).click();
+  await sidepanelPage.getByText("已复制当前网页文字。", { exact: true }).waitFor();
+  const exportedPageText = await captureDownload(
+    sidepanelPage,
+    worker,
+    () => sidepanelPage.getByRole("button", { name: "导出 TXT", exact: true }).click(),
+    (filename) => /webfile-hunter-text-127\.0\.0\.1-.*\.txt$/.test(filename),
+    "网页文字导出"
+  );
+  if (
+    !exportedPageText.content.includes("WebFile Hunter 正文提取夹具") ||
+    exportedPageText.content.includes("input-text-secret")
+  ) {
+    throw new Error("网页文字导出内容或隐私过滤不正确。");
+  }
+  await assertResponsive(sidepanelPage, "文字页");
+  await assertActiveNavigation(sidepanelPage, "文本");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-text-380.png"),
+    fullPage: true
+  });
+  await sidepanelPage.getByRole("button", { name: "历史", exact: true }).click();
   await currentHistoryCard.getByRole("button", { name: "打开结果" }).click();
   await sidepanelPage.getByRole("button", { name: "可能资源", exact: true }).click();
   await sidepanelPage.getByText("临时浏览器资源，不能直接下载", { exact: true }).waitFor();
@@ -903,7 +967,7 @@ try {
   await sidepanelPage.getByText("暂无扫描历史。", { exact: true }).waitFor();
   await eventually(
     () => databaseRows(worker),
-    (rows) => rows.sessions.length === 0 && rows.files.length === 0
+    (rows) => rows.sessions.length === 0 && rows.files.length === 0 && rows.texts.length === 0
   );
   const downloadsAfterClear = await send(permissionPage, { type: "GET_DOWNLOADS" });
   const settingsAfterClear = await send(permissionPage, { type: "GET_SETTINGS" });
@@ -921,6 +985,8 @@ try {
   console.log(`当前页扫描通过：${currentFiles.length} 个候选`);
   console.log("JSON-LD、显式 MIME、itemprop 与 enclosure 资源发现通过");
   console.log("template、开放 Shadow DOM 与延迟 attachShadow 资源发现通过");
+  console.log("当前页、开放 Shadow DOM、跨域 Frame 与递归网页文字提取通过");
+  console.log("隐藏内容、表单值与可编辑草稿隐私过滤通过");
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
   console.log("第三方 CDN 响应与跨域 frame 资源嗅探通过");
@@ -937,8 +1003,8 @@ try {
   console.log("TXT/CSV/JSON 结果导出与历史导出真实落盘通过");
   console.log(`下载队列真实落盘通过：${requestedFileDownload.filename}`);
   console.log("可能资源独立入口与 blob 安全提示通过");
-  console.log("五页窄侧栏、可访问控件与历史清空隔离通过");
-  console.log("五页截图已写入 test-results/edge-*-380.png");
+  console.log("六页窄侧栏、可访问控件与历史清空隔离通过");
+  console.log("六页截图已写入 test-results/edge-*-380.png");
 } finally {
   await context?.close();
   await server.close();

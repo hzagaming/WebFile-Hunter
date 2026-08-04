@@ -210,4 +210,40 @@ describe("useAppSnapshot", () => {
     expect(result.current.snapshot?.sessions[0]?.status).toBe("completed");
     expect(result.current.snapshot?.incompleteSessions).toHaveLength(0);
   });
+
+  it("实时合并当前任务提取的网页文字并覆盖同一文档", async () => {
+    const session = scanSession({ id: "text-session" });
+    const current = appSnapshot({ activeSession: session, sessions: [session] });
+    mocks.sendMessage.mockResolvedValue(current);
+    const { result } = renderHook(() => useAppSnapshot());
+    await waitFor(() => expect(result.current.snapshot).toBe(current));
+
+    const listener = mocks.subscribeEvents.mock.calls[0]?.[0];
+    const document = {
+      id: "text-document",
+      pageUrl: "https://example.test/page",
+      title: "页面",
+      content: "初次正文",
+      characterCount: 4,
+      capturedAt: 1,
+      truncated: false
+    };
+    act(() => {
+      listener?.({
+        type: "TEXT_CAPTURED",
+        payload: { sessionId: session.id, document }
+      });
+      listener?.({
+        type: "TEXT_CAPTURED",
+        payload: {
+          sessionId: session.id,
+          document: { ...document, content: "更新正文", capturedAt: 2 }
+        }
+      });
+    });
+
+    expect(result.current.snapshot?.textDocuments).toEqual([
+      expect.objectContaining({ id: document.id, content: "更新正文" })
+    ]);
+  });
 });

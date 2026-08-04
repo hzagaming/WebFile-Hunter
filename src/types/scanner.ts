@@ -17,14 +17,22 @@ export interface PageCandidate {
   noFollow: boolean;
 }
 
+export interface ExtractedPageText {
+  content: string;
+  language?: string;
+  truncated: boolean;
+}
+
 export interface PageScanResult {
   pageUrl: string;
   title: string;
   resources: RawResource[];
   pages: PageCandidate[];
+  text?: ExtractedPageText;
 }
 
 export interface ExtractedHtmlLinks extends PageScanResult {
+  text: ExtractedPageText;
   baseUrl: string;
   canonicalUrl?: string;
   metaRefresh?: string;

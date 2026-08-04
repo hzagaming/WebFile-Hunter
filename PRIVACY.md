@@ -6,9 +6,9 @@ WebFile Hunter 默认完全在用户的 Microsoft Edge 浏览器本地运行。
 
 ## 数据处理
 
-- 扫描结果、文件链接、文件名、任务历史、下载任务和设置保存在本地浏览器的 IndexedDB 或 `chrome.storage`。
+- 扫描结果、提取的公开可见网页文字、文件链接、文件名、任务历史、下载任务和设置保存在本地浏览器的 IndexedDB 或 `chrome.storage`。
 - 文件链接只在用户启动递归扫描、主动获取元数据或手动开始下载时访问。递归会以 GET 读取同源静态 HTML，并可读取 robots.txt 声明的同源 Sitemap/Sitemap Index（含 raw gzip）；资源元数据探测才使用 HEAD。
-- 扩展不上传网页内容、URL、文件名或扫描历史。
+- 扩展不上传网页文字、URL、文件名或扫描历史。
 - 扩展不使用第三方分析、广告 SDK、静默遥测、账户或云同步。
 - 扩展不出售、出租或共享用户数据。
 
@@ -16,6 +16,7 @@ WebFile Hunter 默认完全在用户的 Microsoft Edge 浏览器本地运行。
 
 - 不读取或保存密码输入框。
 - 不读取用户填写的表单内容。
+- 不提取显式隐藏元素、文本框、下拉选项或 `contenteditable` 草稿，不执行 OCR。
 - 不收集 Cookie、Authorization 头、登录凭据或 Token。
 - 不查询浏览历史；只在界面运行时读取当前活动标签页的 URL 与标题以显示上下文，实时监听只处理用户当前指定的标签页。
 

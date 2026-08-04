@@ -1,6 +1,6 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
-import { putFiles, getSession, listFiles } from "@/database/db";
+import { putFiles, getSession, listFiles, putPageText } from "@/database/db";
 import { getSettings } from "@/database/settings";
 import { broadcast } from "./broadcast";
 import { enqueueCrawlerPages } from "./crawler-engine";
@@ -118,6 +118,17 @@ export async function handlePageScanResult(
   });
   const stored = await putFiles(sessionId, candidates);
   if (stored.length) broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: stored } });
+  if (!liveBatch && result.text?.content) {
+    const document = await putPageText(sessionId, {
+      pageUrl: result.pageUrl,
+      title: result.title,
+      content: result.text.content,
+      ...(result.text.language ? { language: result.text.language } : {}),
+      capturedAt: Date.now(),
+      truncated: result.text.truncated
+    });
+    if (document) broadcast({ type: "TEXT_CAPTURED", payload: { sessionId, document } });
+  }
   const current = await getSession(sessionId);
   if (current) {
     await patchSession(sessionId, {

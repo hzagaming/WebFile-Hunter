@@ -130,6 +130,16 @@ export function useAppSnapshot() {
           event.payload.files.forEach((file) => files.set(file.id, file));
           return { ...current, files: [...files.values()] };
         }
+        if (
+          event.type === "TEXT_CAPTURED" &&
+          current.activeSession?.id === event.payload.sessionId
+        ) {
+          const documents = new Map(
+            current.textDocuments.map((document) => [document.id, document])
+          );
+          documents.set(event.payload.document.id, event.payload.document);
+          return { ...current, textDocuments: [...documents.values()] };
+        }
         return current;
       });
     });

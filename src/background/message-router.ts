@@ -6,6 +6,7 @@ import {
   getFile,
   getSession,
   listFiles,
+  listPageTexts,
   listSessions,
   putFiles
 } from "@/database/db";
@@ -92,20 +93,29 @@ async function snapshot(
   const mappedSessionId =
     !sessionId && activeTab ? await activeSessionIdForTab(activeTab.id) : undefined;
   const activeSession = selectSnapshotSession(sessions, activeTab, sessionId, mappedSessionId);
-  const [files, downloadSnapshot, settings, allSitesAccess, grantedOrigins, incomplete] =
-    await Promise.all([
-      activeSession ? listFiles(activeSession.id) : Promise.resolve([]),
-      downloads.getSnapshot(),
-      getSettings(),
-      hasAllSitesPermission(),
-      getGrantedOrigins(),
-      incompleteSessions()
-    ]);
+  const [
+    files,
+    textDocuments,
+    downloadSnapshot,
+    settings,
+    allSitesAccess,
+    grantedOrigins,
+    incomplete
+  ] = await Promise.all([
+    activeSession ? listFiles(activeSession.id) : Promise.resolve([]),
+    activeSession ? listPageTexts(activeSession.id) : Promise.resolve([]),
+    downloads.getSnapshot(),
+    getSettings(),
+    hasAllSitesPermission(),
+    getGrantedOrigins(),
+    incompleteSessions()
+  ]);
   return {
     ...(activeTab ? { activeTab } : {}),
     ...(activeSession ? { activeSession } : {}),
     sessions,
     files,
+    textDocuments,
     downloads: downloadSnapshot,
     settings,
     allSitesAccess,
