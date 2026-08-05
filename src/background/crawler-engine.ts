@@ -1,6 +1,7 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
 import { extractLinksFromHtml } from "@/core/html-link-extractor";
+import { extractHttpLinkHeader } from "@/core/http-link-header";
 import { isHtmlMime } from "@/core/mime-map";
 import { parseSitemapXml } from "@/core/sitemap-parser";
 import { inspectUrlSafety } from "@/core/url-security";
@@ -160,7 +161,11 @@ async function seedSitemaps(
   queue: CrawlerQueue,
   robots: RobotsRules
 ): Promise<void> {
-  const pending = [...robots.sitemaps];
+  const pending = robots.sitemaps.length
+    ? [...robots.sitemaps]
+    : session.config.respectRobots
+      ? [`${session.origin}/sitemap.xml`, `${session.origin}/sitemap_index.xml`]
+      : [];
   const visited = new Set<string>();
   while (pending.length && visited.size < MAX_SITEMAP_FILES && !active.controller.signal.aborted) {
     const raw = pending.shift();
@@ -176,7 +181,7 @@ async function seedSitemaps(
       allowedOrigin: session.origin,
       excludeDangerousActions: false
     });
-    if (!safety.safe) continue;
+    if (!safety.safe || !robots.isAllowed(sitemapUrl)) continue;
     visited.add(sitemapUrl);
     try {
       const response = await active.limiter.run(
@@ -259,7 +264,7 @@ async function recordCandidates(
     try {
       const candidate = createFileCandidate({
         url: resource.url,
-        source: "CRAWLED_PAGE",
+        source: resource.source,
         sourcePageUrl: pageUrl,
         sourcePageTitle: pageTitle,
         parentUrl: pageUrl,
@@ -312,10 +317,15 @@ async function processPage(
     throw new TypeError(`页面请求失败（HTTP ${response.status}）。`);
   }
   const metadata = metadataFromResponse(item.url, response);
+  const headerLinks = extractHttpLinkHeader(
+    response.headers.get("link") ?? undefined,
+    metadata.finalUrl
+  );
   const shouldParseHtml =
     isHtmlMime(metadata.mimeType) || (!metadata.mimeType && !looksLikeFileUrl(item.url));
   if (!shouldParseHtml) {
     await response.body?.cancel();
+    await recordCandidates(session, metadata.finalUrl, "", headerLinks.resources, active);
     const settings = await getSettings();
     const candidate = createFileCandidate({
       url: item.url,
@@ -340,7 +350,10 @@ async function processPage(
   const html = await readLimitedText(response, session.config.maxHtmlBytes);
   const finalUrl = metadata.finalUrl;
   const extracted = extractLinksFromHtml(html, finalUrl);
-  await recordCandidates(session, finalUrl, extracted.title, extracted.resources, active);
+  const resources = new Map(
+    [...extracted.resources, ...headerLinks.resources].map((resource) => [resource.url, resource])
+  );
+  await recordCandidates(session, finalUrl, extracted.title, [...resources.values()], active);
   if (extracted.text?.content) {
     const document = await putPageText(session.id, {
       pageUrl: finalUrl,
@@ -355,7 +368,7 @@ async function processPage(
     }
   }
   if (!extracted.noFollow && item.depth < session.config.maxDepth) {
-    const pages = [...extracted.pages];
+    const pages = [...extracted.pages, ...headerLinks.pages];
     if (extracted.metaRefresh) {
       pages.push({ url: extracted.metaRefresh, tagName: "meta", noFollow: false });
     }

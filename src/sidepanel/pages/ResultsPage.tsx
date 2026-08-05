@@ -449,7 +449,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       {filtered.length ? (
         <VirtualList
           items={filtered}
-          itemHeight={216}
+          itemHeight={221}
           height={Math.max(320, viewportHeight - 390)}
           endPadding={72}
           getKey={(file) => file.id}

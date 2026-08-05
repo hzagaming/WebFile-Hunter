@@ -1,9 +1,14 @@
+@import "theme.css";
+
 body {
   max-width: 720px;
   margin: 3rem auto;
   font-family: system-ui, sans-serif;
   background: #f3f8fa;
   color: #183044;
+}
+main {
+  background-image: image-set("/files/css-choice.avif" 1x, "/files/css-choice.webp" 2x);
 }
 a,
 button,

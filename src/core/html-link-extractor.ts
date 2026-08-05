@@ -1,4 +1,5 @@
 import { parse, type DefaultTreeAdapterMap } from "parse5";
+import { extractCssUrls } from "./css-url-extractor";
 import { looksLikeFileUrl } from "./file-classifier";
 import {
   elementResourceHint,
@@ -119,12 +120,6 @@ function textContent(node: Node): string {
   if ("value" in node && typeof node.value === "string") return node.value;
   if (!("childNodes" in node)) return "";
   return node.childNodes.map(textContent).join("");
-}
-
-function cssUrls(value: string): string[] {
-  return [...value.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)]
-    .map((match) => match[2]?.trim())
-    .filter((url): url is string => Boolean(url));
 }
 
 function srcsetUrls(value: string): string[] {
@@ -365,12 +360,13 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
       }
     }
     if (element.tagName === "style") {
-      for (const raw of cssUrls(textContent(element)))
+      for (const raw of extractCssUrls(textContent(element)))
         addResource(raw, "CSS_URL", element, undefined, "resource");
     }
     const style = attrs.get("style");
     if (style)
-      for (const raw of cssUrls(style)) addResource(raw, "CSS_URL", element, undefined, "resource");
+      for (const raw of extractCssUrls(style))
+        addResource(raw, "CSS_URL", element, undefined, "resource");
 
     for (const attrName of new Set([
       ...(RESOURCE_ATTRIBUTES[element.tagName] ?? []),
@@ -386,8 +382,8 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
         } catch {
           continue;
         }
-        const isPageContainer = element.tagName === "iframe";
-        const isAnchor = element.tagName === "a" || element.tagName === "form";
+        const isPageContainer = element.tagName === "iframe" || element.tagName === "frame";
+        const isAnchor = ["a", "area", "form"].includes(element.tagName);
         if (looksLikeFileUrl(normalized) || (!isAnchor && !isPageContainer)) {
           addResource(
             value,
@@ -408,12 +404,16 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
       }
     }
 
-    if (element.tagName === "a" || element.tagName === "form" || element.tagName === "iframe") {
+    if (["a", "area", "form", "iframe", "frame"].includes(element.tagName)) {
       const formMethod = (attrs.get("method") ?? "").trim().toLowerCase();
       if (element.tagName === "form" && (formMethod === "post" || formMethod === "dialog"))
         continue;
       const attribute =
-        element.tagName === "form" ? "action" : element.tagName === "iframe" ? "src" : "href";
+        element.tagName === "form"
+          ? "action"
+          : element.tagName === "iframe" || element.tagName === "frame"
+            ? "src"
+            : "href";
       const raw = attrs.get(attribute);
       if (!raw) continue;
       try {

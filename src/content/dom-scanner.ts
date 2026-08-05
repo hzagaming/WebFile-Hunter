@@ -20,11 +20,13 @@ const MAX_URL_LENGTH = 16_384;
 
 const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["a", ["href"]],
+  ["area", ["href"]],
   ["audio", ["src"]],
   ["video", ["src", "poster"]],
   ["source", ["src", "srcset"]],
   ["track", ["src"]],
   ["iframe", ["src"]],
+  ["frame", ["src"]],
   ["embed", ["src"]],
   ["object", ["data"]],
   ["img", ["src", "srcset"]],
@@ -105,7 +107,9 @@ export function scanDocument(
     const url = normalize(raw);
     if (!url || resources.has(url)) return;
     const mimeType = attribute === "structured-data" ? undefined : element?.getAttribute("type");
-    const hasDownload = element instanceof HTMLAnchorElement && element.hasAttribute("download");
+    const hasDownload =
+      (element instanceof HTMLAnchorElement || element instanceof HTMLAreaElement) &&
+      element.hasAttribute("download");
     resources.set(url, {
       url,
       source: hasDownload ? "DOWNLOAD_ATTRIBUTE" : source,
@@ -150,9 +154,10 @@ export function scanDocument(
             }
             continue;
           }
-          const pageElement = element.matches("a,form,iframe");
+          const pageElement = element.matches("a,area,form,iframe,frame");
           const downloadable =
-            element instanceof HTMLAnchorElement && element.hasAttribute("download");
+            (element instanceof HTMLAnchorElement || element instanceof HTMLAreaElement) &&
+            element.hasAttribute("download");
           const explicitResource =
             resourceMimeHint(element.getAttribute("type") ?? undefined) ||
             Boolean(metaResourceKind({ itemprop: element.getAttribute("itemprop") ?? undefined }));
@@ -184,7 +189,7 @@ export function scanDocument(
         addResource(raw, element, "style", "CSS_URL", "resource");
       }
     }
-    for (const raw of scanAccessibleStylesheets())
+    for (const raw of scanAccessibleStylesheets(roots))
       addResource(raw, undefined, undefined, "CSS_URL", "resource");
   }
   if (options.includePerformance !== false) {

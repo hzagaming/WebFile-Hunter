@@ -1,8 +1,10 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
 import { looksLikeFileUrl } from "@/core/file-classifier";
+import { extractHttpLinkHeader } from "@/core/http-link-header";
 import { isHtmlMime, normalizeMimeType } from "@/core/mime-map";
 import { getSession, listFiles, putFiles } from "@/database/db";
 import { getSettings } from "@/database/settings";
+import type { RawResource } from "@/types/scanner";
 import { broadcast } from "./broadcast";
 import { liveSessionIdForTab, patchSession } from "./session-manager";
 
@@ -25,7 +27,10 @@ interface PendingRequest {
 function headersMap(headers?: chrome.webRequest.HttpHeader[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const header of headers ?? []) {
-    if (header.name && header.value !== undefined) map.set(header.name.toLowerCase(), header.value);
+    if (!header.name || header.value === undefined) continue;
+    const name = header.name.toLowerCase();
+    const existing = map.get(name);
+    map.set(name, name === "link" && existing ? `${existing}, ${header.value}` : header.value);
   }
   return map;
 }
@@ -97,6 +102,9 @@ export class NetworkMonitor {
       ...(headers.get("accept-ranges") ? { acceptRanges: headers.get("accept-ranges") } : {})
     });
     this.#requests.set(details.requestId, request);
+    const linked = extractHttpLinkHeader(headers.get("link"), details.url);
+    if (linked.resources.length)
+      void this.#persistLinked(request, linked.resources).catch(() => undefined);
     const isCandidate =
       looksLikeFileUrl(request.url) ||
       Boolean(request.contentDisposition) ||
@@ -120,6 +128,42 @@ export class NetworkMonitor {
   readonly #errored = (details: chrome.webRequest.OnErrorOccurredDetails): void => {
     this.#requests.delete(details.requestId);
   };
+
+  async #persistLinked(request: PendingRequest, resources: readonly RawResource[]): Promise<void> {
+    const sessionId = await liveSessionIdForTab(request.tabId);
+    if (!sessionId) return;
+    const session = await getSession(sessionId);
+    if (!session || session.status !== "running" || session.tabId !== request.tabId) return;
+    const settings = await getSettings();
+    const sourcePageUrl = request.finalUrl ?? request.url;
+    const candidates = resources.flatMap((resource, index) => {
+      if (resource.resourceHint === "image" && !settings.scanImages) return [];
+      try {
+        const candidate = createFileCandidate({
+          url: resource.url,
+          source: "NETWORK_HEADER",
+          sourcePageUrl,
+          parentUrl: sourcePageUrl,
+          tabId: request.tabId,
+          requestId: `${request.requestId}:link:${index}`,
+          requestType: "other",
+          finalUrl: resource.url,
+          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          explicitResource: true,
+          customExtensions: settings.customExtensions,
+          customMimeTypes: settings.customMimeTypes
+        });
+        return shouldIncludeCandidate(candidate, settings) ? [candidate] : [];
+      } catch {
+        return [];
+      }
+    });
+    if (!candidates.length) return;
+    const stored = await putFiles(sessionId, candidates);
+    if (!stored.length) return;
+    broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: stored } });
+    await patchSession(sessionId, { filesDiscovered: (await listFiles(sessionId)).length });
+  }
 
   async #persist(
     request: PendingRequest,

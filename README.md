@@ -142,7 +142,7 @@ npm run build
 
 ## 演示站
 
-`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、无后缀下载接口、重定向、慢响应、429、403、robots.txt、Sitemap Index/raw gzip 隐藏页和 SPA 动态路由。文件均为极小占位内容，不包含版权媒体。
+`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、无后缀下载接口、HTTP Link、CSS `@import`/`image-set`/构造样式表、重定向、慢响应、429、403、robots.txt、Sitemap Index/raw gzip/根路径回退和 SPA 动态路由。文件均为极小占位内容，不包含版权媒体。
 
 ## 发布打包
 
@@ -156,14 +156,14 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.3.0.zip
+release/webfile-hunter-v1.4.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。
 
 ## 已知限制
 
-- 可从 Sitemap 和当前已渲染 DOM 补充页面，但无法发现二者及网络请求都未引用的隐藏文件；不执行目录爆破、文件名枚举或外域无限扩散。
+- 可从 Sitemap、HTTP Link 和当前已渲染 DOM 补充页面，但无法发现这些公开入口及网络请求都未引用的隐藏文件；不执行目录爆破、文件名枚举或外域无限扩散。
 - JSON-LD 只读取明确的资源字段，不分析任意 JavaScript 字符串或把普通页面 URL 当作下载地址。
 - 不破解登录、付费内容、验证码、防盗链、许可证或 DRM。
 - `blob:` URL 通常不是永久下载地址；m3u8 和 DASH 不是普通 MP3 直链。

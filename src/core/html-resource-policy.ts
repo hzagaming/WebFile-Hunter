@@ -14,7 +14,7 @@ const RESOURCE_LINK_RELS = new Set([
   "manifest",
   "enclosure"
 ]);
-const PAGE_LINK_RELS = new Set(["canonical", "next", "prev"]);
+const PAGE_LINK_RELS = new Set(["alternate", "canonical", "next", "prev"]);
 const IMAGE_LINK_RELS = new Set([
   "icon",
   "apple-touch-icon",

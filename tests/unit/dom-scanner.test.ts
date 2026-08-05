@@ -248,6 +248,30 @@ describe("scanDocument", () => {
     expect(result.pages.map((item) => item.url)).toContain(`${location.origin}/search`);
   });
 
+  it("发现 area、frame 与 alternate 页面入口", () => {
+    document.head.innerHTML = '<link rel="alternate" href="/translated">';
+    document.body.innerHTML = `
+      <map><area href="/mapped-page"><area href="/files/mapped.pdf"></map>
+    `;
+    const frame = document.createElement("frame");
+    frame.setAttribute("src", "/legacy-frame");
+    document.body.append(frame);
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.pages.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/translated`,
+        `${location.origin}/mapped-page`,
+        `${location.origin}/legacy-frame`
+      ])
+    );
+    expect(result.resources).toContainEqual(
+      expect.objectContaining({ url: `${location.origin}/files/mapped.pdf` })
+    );
+  });
+
   it("页面 robots none 阻止 SPA DOM 链接进入递归队列", () => {
     document.head.innerHTML = '<meta name="robots" content="none">';
     document.body.innerHTML = '<a href="/private-page">页面</a>';

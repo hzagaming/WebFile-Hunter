@@ -5,6 +5,7 @@
     <title>WebFile Hunter 演示站</title>
     <link rel="stylesheet" href="/site.css" />
     <link rel="enclosure" type="audio/mpeg" href="/api/podcast" />
+    <link rel="alternate" href="/alternate.html" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -47,6 +48,9 @@
       <a type="application/pdf" href="/api/template-document">模板文档</a>
     </template>
     <a href="/page-1.html">第一页</a>
+    <map name="fixture-map">
+      <area href="/mapped-page.html" alt="地图页面" />
+    </map>
     <button id="load-audio" type="button">动态加载 MP3</button>
     <button id="load-api" type="button">请求无后缀文件</button>
     <script src="/site.js"></script>

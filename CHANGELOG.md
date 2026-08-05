@@ -1,5 +1,16 @@
 # 更新记录
 
+## 1.4.0 - 2026-08-05
+
+- CSS 发现新增裸 `@import`、标准/前缀 `image-set`、递归导入样式表和 Document/开放 Shadow Root 构造样式表；相对资源按各自样式表 URL 正确解析。
+- HTML 页面入口新增 `area`、legacy `frame` 和 `rel=alternate`，继续区分页面导航与明确文件资源。
+- 实时监听与同源递归新增 HTTP `Link` 响应头发现，支持 preload、enclosure、next/prev/canonical/alternate，并正确处理带逗号 URL 和 quoted 参数。
+- robots.txt 未声明 Sitemap 时安全尝试同源 `/sitemap.xml` 与 `/sitemap_index.xml`；所有新页面入口继续经过同源、robots、危险 URL、深度、页面、并发和速率限制。
+- HTTP Link 单响应限制 1,000 个候选，CSS 扫描限制 1,000 个样式表与 20,000 条规则；响应头候选改为批量入库并保留真实来源页。
+- 扫描启动、暂停、继续和停止增加可访问实时文字反馈；结果卡按钮目标与虚拟行高在 280px 窄侧栏下完成修复。
+- 真实 Edge E2E 覆盖嵌套/构造 CSS、HTTP Link、area/alternate、默认 Sitemap 回退、正文、跨域 frame、导出下载和 280/320/380px 六页侧栏。
+- 扩展继续完全本地运行，默认静音，不播放音效或背景音乐。
+
 ## 1.3.0 - 2026-08-04
 
 - 新增独立“文本”侧栏，提取当前页、权限允许的 frame 与同源递归 HTML 的公开可见正文，支持页面切换、搜索计数、复制和 TXT 导出。

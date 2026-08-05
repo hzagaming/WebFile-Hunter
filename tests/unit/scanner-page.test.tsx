@@ -58,7 +58,20 @@ describe("ScannerPage", () => {
   });
 
   it("递归入口明确说明 Sitemap 与当前 SPA DOM 补种", () => {
-    render(<ScannerPage snapshot={appSnapshot()} refresh={vi.fn()} openResults={vi.fn()} />);
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://example.test/page",
+            title: "Example",
+            origin: "https://example.test"
+          }
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
     expect(screen.getByRole("button", { name: /同域递归扫描/ })).toHaveTextContent("Sitemap");
     expect(screen.getByRole("button", { name: /同域递归扫描/ })).toHaveTextContent("SPA");
   });
@@ -146,6 +159,38 @@ describe("ScannerPage", () => {
     await user.click(screen.getByRole("button", { name: "暂停" }));
     expect(screen.getByRole("button", { name: "暂停" })).toBeDisabled();
     resolveRequest?.();
+  });
+
+  it("启动任务期间提供静音且可访问的实时状态反馈", async () => {
+    const user = userEvent.setup();
+    let resolveRequest: ((session: ReturnType<typeof scanSession>) => void) | undefined;
+    mocks.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolvePromise) => {
+          resolveRequest = resolvePromise;
+        })
+    );
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://example.test/page",
+            title: "Example",
+            origin: "https://example.test"
+          }
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /扫描当前页面/ }));
+
+    const feedback = screen.getByText("正在启动当前页扫描…");
+    expect(feedback).toHaveAttribute("role", "status");
+    expect(feedback.closest("section")).toHaveAttribute("aria-busy", "true");
+    resolveRequest?.(scanSession({ id: "working-session" }));
   });
 
   it("停止进行中任务前确认", async () => {

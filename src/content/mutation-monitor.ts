@@ -1,4 +1,5 @@
 import { discoverScanRoots } from "./scan-roots";
+import { accessibleStyleSheets } from "./style-url-scanner";
 
 export interface ContentMonitor {
   stop(): void;
@@ -12,6 +13,7 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
   };
   const mutationObserver = new MutationObserver(schedule);
   const observedRoots = new Set<Node>();
+  const observedStyleSheets = new WeakSet<CSSStyleSheet>();
   const mutationOptions: MutationObserverInit = {
     subtree: true,
     childList: true,
@@ -51,9 +53,9 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "style"
     ]
   };
-  const syncRoots = (): boolean => {
+  const syncRoots = (roots: readonly ParentNode[]): boolean => {
     let added = false;
-    for (const root of discoverScanRoots()) {
+    for (const root of roots) {
       if (observedRoots.has(root)) continue;
       mutationObserver.observe(root, mutationOptions);
       observedRoots.add(root);
@@ -61,9 +63,23 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
     }
     return added;
   };
-  syncRoots();
+  const syncStyleSheets = (roots: readonly ParentNode[]): boolean => {
+    let added = false;
+    for (const stylesheet of accessibleStyleSheets(roots)) {
+      if (observedStyleSheets.has(stylesheet)) continue;
+      observedStyleSheets.add(stylesheet);
+      added = true;
+    }
+    return added;
+  };
+  const initialRoots = discoverScanRoots();
+  syncRoots(initialRoots);
+  syncStyleSheets(initialRoots);
   const rootInterval = window.setInterval(() => {
-    if (syncRoots()) schedule();
+    const roots = discoverScanRoots();
+    const rootsAdded = syncRoots(roots);
+    const stylesheetsAdded = syncStyleSheets(roots);
+    if (rootsAdded || stylesheetsAdded) schedule();
   }, 2_000);
   const performanceObserver = new PerformanceObserver(schedule);
   performanceObserver.observe({ type: "resource", buffered: true });

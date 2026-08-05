@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResourceMetadata, SafeFetchOptions } from "@/background/metadata-probe";
 import type { ExtensionEvent } from "@/messaging/message-types";
+import type { FileCandidate } from "@/types/models";
 import { scanSession } from "../helpers/fixtures";
 
 const mocks = vi.hoisted(() => ({
@@ -17,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     vi.fn<(url: string, init: RequestInit, options: SafeFetchOptions) => Promise<Response>>(),
   probeUrlMetadata: vi.fn(),
   putAppError: vi.fn(),
-  putFiles: vi.fn(),
+  putFiles:
+    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>(),
   putPageText: vi.fn(),
   readLimitedText: vi.fn(),
   safeFetch:
@@ -356,6 +358,129 @@ describe("crawler engine lifecycle", () => {
     expect(mocks.patchSession).toHaveBeenCalledWith(
       recursive.id,
       expect.objectContaining({ pagesProcessed: 2 })
+    );
+  });
+
+  it("robots 未声明时尝试公开根 Sitemap 并加入页面", async () => {
+    const fallbackUrl = "https://example.test/fallback-page";
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        if (url.endsWith("/robots.txt")) return Promise.resolve(new Response("", { status: 200 }));
+        if (url.endsWith("/sitemap.xml")) {
+          return Promise.resolve(
+            new Response(`<urlset><url><loc>${fallbackUrl}</loc></url></urlset>`, {
+              status: 200,
+              headers: { "Content-Type": "application/xml" }
+            })
+          );
+        }
+        if (url.endsWith("/sitemap_index.xml")) {
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }
+        return Promise.resolve(
+          new Response("<title>公开 Sitemap 页面</title>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" }
+          })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(fallbackUrl);
+    expect(mocks.fetchWithRetries).toHaveBeenCalledWith(
+      "https://example.test/sitemap.xml",
+      { method: "GET" },
+      expect.any(Object)
+    );
+  });
+
+  it("根 Sitemap 回退仍遵守 robots 禁止规则", async () => {
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(
+          url.endsWith("/robots.txt")
+            ? new Response("User-agent: *\nDisallow: /sitemap.xml\nDisallow: /sitemap_index.xml", {
+                status: 200
+              })
+            : new Response("<title>公开页面</title>", {
+                status: 200,
+                headers: { "Content-Type": "text/html" }
+              })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).not.toEqual(
+      expect.arrayContaining([
+        "https://example.test/sitemap.xml",
+        "https://example.test/sitemap_index.xml"
+      ])
+    );
+  });
+
+  it("从 HTML 响应 Link 头记录资源并继续 next 页面", async () => {
+    const nextUrl = "https://example.test/header-next";
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(
+          new Response(`<title>${url === nextUrl ? "Next" : "Start"}</title>`, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/html",
+              ...(url === nextUrl
+                ? {}
+                : {
+                    Link: '</assets/header.pdf>; rel=preload; type="application/pdf", </header-next>; rel=next'
+                  })
+            }
+          })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, maxDepth: 2, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(nextUrl);
+    expect(mocks.putFiles.mock.calls.flatMap(([, candidates]) => candidates)).toContainEqual(
+      expect.objectContaining({
+        canonicalUrl: "https://example.test/assets/header.pdf",
+        source: "NETWORK_HEADER"
+      })
     );
   });
 

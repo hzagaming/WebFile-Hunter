@@ -19,3 +19,9 @@ document.body.append(resourceHost);
 const lateShadowHost = document.createElement("div");
 lateShadowHost.id = "late-shadow-host";
 document.body.append(lateShadowHost);
+
+const adoptedFixture = new CSSStyleSheet();
+adoptedFixture.replaceSync(
+  '.adopted-fixture { background-image: url("/files/adopted-initial.webp"); }'
+);
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, adoptedFixture];

@@ -19,6 +19,7 @@ const testManifestPath = join(extensionDirectory, "manifest.json");
 const testManifest = JSON.parse(await readFile(testManifestPath, "utf8"));
 const server = await startTestServer();
 const recursiveOrigin = "http://wfh.test";
+const fallbackOrigin = "http://fallback.wfh.test";
 const ungrantedOrigin = "http://ungranted.wfh.test";
 const cdnOrigin = "http://cdn.wfh.test";
 testManifest.host_permissions = ["http://*/*", "https://*/*"];
@@ -350,7 +351,7 @@ try {
       "--no-first-run",
       "--no-default-browser-check",
       "--no-proxy-server",
-      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port},MAP ungranted.wfh.test:80 127.0.0.1:${server.port},MAP cdn.wfh.test:80 127.0.0.1:${server.port}`
+      `--host-resolver-rules=MAP wfh.test:80 127.0.0.1:${server.port},MAP fallback.wfh.test:80 127.0.0.1:${server.port},MAP ungranted.wfh.test:80 127.0.0.1:${server.port},MAP cdn.wfh.test:80 127.0.0.1:${server.port}`
     ]
   });
   const worker =
@@ -449,6 +450,30 @@ try {
           file.sessionId === currentSession.id &&
           file.canonicalUrl === `${server.origin}/files/lazy-manual.pdf`
       ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/theme.css` &&
+          file.sources.includes("CSS_URL")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/css-choice.avif` &&
+          file.sources.includes("CSS_URL")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/theme-background.svg` &&
+          file.sources.includes("CSS_URL")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/adopted-initial.webp` &&
+          file.sources.includes("CSS_URL")
+      ) &&
       rows.texts.some(
         (document) =>
           document.sessionId === currentSession.id &&
@@ -508,6 +533,13 @@ try {
     if (!(meta instanceof HTMLMetaElement)) throw new Error("动态 OG 元信息不存在");
     meta.content = "/files/dynamic-og.webp";
   });
+  await fixturePage.evaluate(() => {
+    const stylesheet = new CSSStyleSheet();
+    stylesheet.replaceSync(
+      '.live-adopted-fixture { background-image: url("/files/adopted-live.webp"); }'
+    );
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, stylesheet];
+  });
   await fixturePage.evaluate(
     (url) => fetch(url).then((response) => response.arrayBuffer()),
     `${cdnOrigin}/api/cross-origin`
@@ -546,6 +578,12 @@ try {
           file.canonicalUrl === `${server.origin}/api/late-shadow-document` &&
           file.mimeType === "application/pdf" &&
           file.sources.includes("DOM_ATTRIBUTE")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.canonicalUrl === `${server.origin}/files/adopted-live.webp` &&
+          file.sources.includes("CSS_URL")
       )
   );
   const apiFile = liveRows.files.find(
@@ -652,6 +690,13 @@ try {
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/structured-video")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/typed-document")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/api/template-document")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/alternate-only.txt")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/mapped-only.csv")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/header-next.zip")) ||
+    !recursiveFiles.some(
+      (file) =>
+        file.canonicalUrl.endsWith("/api/header-document") && file.mimeType === "application/pdf"
+    ) ||
     !recursiveFiles.some(
       (file) =>
         file.canonicalUrl.endsWith("/files/shadow-video.mp4") &&
@@ -663,6 +708,45 @@ try {
       `递归扫描链路不完整：${JSON.stringify({ completedRecursive, files: recursiveFiles.length })}`
     );
   }
+
+  const fallbackPage = await context.newPage();
+  watchPage(fallbackPage, "fallback-sitemap");
+  await fallbackPage.goto(fallbackOrigin, { waitUntil: "domcontentloaded" });
+  const fallbackTabId = await worker.evaluate(
+    async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id
+  );
+  if (fallbackTabId === undefined) throw new Error("无法读取默认 Sitemap 测试标签页 ID。");
+  const fallbackSession = await send(permissionPage, {
+    type: "START_RECURSIVE_CRAWL",
+    payload: {
+      tabId: fallbackTabId,
+      config: {
+        ...settings.scan,
+        respectRobots: true,
+        maxDepth: 0,
+        maxPages: 4,
+        maxConcurrency: 2,
+        minDelayMs: 500,
+        probeMetadata: false
+      }
+    }
+  });
+  const fallbackRows = await eventually(
+    () => databaseRows(worker),
+    (rows) =>
+      rows.sessions.find((session) => session.id === fallbackSession.id)?.status === "completed",
+    20_000
+  );
+  if (
+    !fallbackRows.files.some(
+      (file) =>
+        file.sessionId === fallbackSession.id &&
+        file.canonicalUrl === `${fallbackOrigin}/files/fallback-only.json`
+    )
+  ) {
+    throw new Error("robots 未声明 Sitemap 时未发现公开根 Sitemap 资源。");
+  }
+  await fallbackPage.close();
 
   const recursiveDownloadFile = recursiveFiles.find((file) =>
     file.canonicalUrl.endsWith("/files/sample.txt")

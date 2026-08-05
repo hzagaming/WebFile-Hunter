@@ -593,7 +593,7 @@ h3 {
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
-  height: 207px;
+  height: 212px;
   margin: 0 4px 9px;
   padding: 12px 10px 10px 38px;
   border: 1px solid var(--line);
@@ -696,6 +696,7 @@ h3 {
   margin-top: 8px;
 }
 .card-actions button {
+  min-height: 28px;
   padding: 4px 7px;
   font-size: 10px;
 }

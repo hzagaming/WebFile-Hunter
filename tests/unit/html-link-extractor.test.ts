@@ -177,6 +177,42 @@ describe("extractLinksFromHtml", () => {
     expect(result.pages.map((item) => item.url)).toContain("https://example.test/invalid-method");
   });
 
+  it("从静态 HTML 发现 area、frame、alternate 与扩展 CSS 资源", () => {
+    const result = extractLinksFromHtml(
+      `
+        <link rel="alternate" href="/translated">
+        <map><area href="/mapped-page"><area href="/files/mapped.pdf"></map>
+        <style>
+          @import "theme.css";
+          .hero { background-image: image-set("hero.avif" 1x, url("hero.webp") 2x); }
+        </style>
+      `,
+      "https://example.test/article"
+    );
+    const frameResult = extractLinksFromHtml(
+      "<html><head></head><frameset><frame src='/legacy-frame'></frameset></html>",
+      "https://example.test/article"
+    );
+
+    expect(result.pages.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/translated",
+        "https://example.test/mapped-page"
+      ])
+    );
+    expect(frameResult.pages.map((item) => item.url)).toContain(
+      "https://example.test/legacy-frame"
+    );
+    expect(result.resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/files/mapped.pdf",
+        "https://example.test/theme.css",
+        "https://example.test/hero.avif",
+        "https://example.test/hero.webp"
+      ])
+    );
+  });
+
   it("将 robots none 视为 nofollow", () => {
     const result = extractLinksFromHtml(
       '<meta name="robots" content="none"><a href="/private-page">页面</a>',

@@ -20,9 +20,32 @@ export async function startTestServer() {
   let rateLimitHits = 0;
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const hostname = request.headers.host?.split(":", 1)[0] ?? "";
     if (url.pathname === "/favicon.ico") {
       response.writeHead(204);
       response.end();
+      return;
+    }
+    if (hostname === "fallback.wfh.test" && url.pathname === "/robots.txt") {
+      response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("User-agent: *\n");
+      return;
+    }
+    if (hostname === "fallback.wfh.test" && url.pathname === "/sitemap.xml") {
+      response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8" });
+      response.end(
+        '<?xml version="1.0"?><urlset><url><loc>http://fallback.wfh.test/fallback-only.html</loc></url></urlset>'
+      );
+      return;
+    }
+    if (hostname === "fallback.wfh.test" && url.pathname === "/sitemap_index.xml") {
+      response.writeHead(404);
+      response.end("Not found");
+      return;
+    }
+    if (url.pathname === "/api/header-document") {
+      response.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": "4" });
+      response.end(request.method === "HEAD" ? undefined : "%PDF");
       return;
     }
     if (url.pathname === "/api/download") {
@@ -120,6 +143,15 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : icon);
       return;
     }
+    if (url.pathname === "/files/css-choice.avif" || url.pathname === "/files/css-choice.webp") {
+      const icon = await readFile(resolve("public/icons/icon16.png"));
+      response.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": String(icon.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : icon);
+      return;
+    }
     if (url.pathname === "/files/structured-poster.webp") {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {
@@ -211,7 +243,12 @@ export async function startTestServer() {
       const content = await readFile(file);
       response.writeHead(200, {
         "Content-Type": mimeTypes[extname(file)] ?? "application/octet-stream",
-        "Content-Length": String(content.length)
+        "Content-Length": String(content.length),
+        ...(hostname === "wfh.test" && url.pathname === "/"
+          ? {
+              Link: '</api/header-document>; rel=preload; type="application/pdf", </header-next.html>; rel=next'
+            }
+          : {})
       });
       response.end(request.method === "HEAD" ? undefined : content);
     } catch {

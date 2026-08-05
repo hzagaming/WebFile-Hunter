@@ -205,4 +205,38 @@ describe("NetworkMonitor", () => {
     await Promise.resolve();
     expect(mocks.putFiles).not.toHaveBeenCalled();
   });
+
+  it("从 HTML 响应的 Link 头发现显式资源", async () => {
+    headersReceived?.({
+      requestId: "request-link-header",
+      url: "https://example.test/page",
+      method: "GET",
+      frameId: 0,
+      parentFrameId: -1,
+      documentLifecycle: "active",
+      frameType: "outermost_frame",
+      tabId: 7,
+      type: "main_frame",
+      timeStamp: 1,
+      statusCode: 200,
+      statusLine: "HTTP/1.1 200 OK",
+      initiator: "https://example.test",
+      responseHeaders: [
+        { name: "Content-Type", value: "text/html" },
+        {
+          name: "Link",
+          value: '</assets/header-document>; rel=preload; type="application/pdf"'
+        }
+      ]
+    });
+
+    await vi.waitFor(() => expect(mocks.putFiles).toHaveBeenCalledTimes(1));
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toEqual(
+      expect.objectContaining({
+        canonicalUrl: "https://example.test/assets/header-document",
+        mimeType: "application/pdf",
+        source: "NETWORK_HEADER"
+      })
+    );
+  });
 });

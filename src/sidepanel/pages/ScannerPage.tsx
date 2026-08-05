@@ -38,6 +38,15 @@ function isSupportedPage(tab: AppSnapshot["activeTab"]): boolean {
   }
 }
 
+const workingMessages: Record<string, string> = {
+  current: "正在启动当前页扫描…",
+  monitor: "正在启动完整嗅探…",
+  crawl: "正在启动同域递归扫描…",
+  pause: "正在暂停递归扫描…",
+  resume: "正在继续递归扫描…",
+  stop: "正在停止扫描任务…"
+};
+
 export function ScannerPage({ snapshot, refresh, openResults }: Props) {
   const [showCrawlConfig, setShowCrawlConfig] = useState(false);
   const [config, setConfig] = useState<ScanConfig>(snapshot.settings.scan);
@@ -108,7 +117,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
   };
 
   return (
-    <section className="page scanner-page">
+    <section className="page scanner-page" aria-busy={Boolean(working)}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">发现公开资源</p>
@@ -124,6 +133,9 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         <div className="notice notice-error" role="alert">
           {localError}
         </div>
+      ) : null}
+      {working ? (
+        <FeedbackNotice kind="info">{workingMessages[working] ?? "正在处理…"}</FeedbackNotice>
       ) : null}
       {!canScan ? (
         <FeedbackNotice kind="info">当前页面不支持扫描，仅支持 HTTP 或 HTTPS 网页。</FeedbackNotice>
@@ -143,7 +155,9 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           disabled={!canScan || Boolean(working)}
           onClick={() => void run("current")}
         >
-          <span className="action-icon">⌕</span>
+          <span className="action-icon" aria-hidden="true">
+            ⌕
+          </span>
           <span>
             <strong>扫描当前页面</strong>
             <small>分析 DOM、样式和已加载资源，不进入其他页面</small>
@@ -155,7 +169,9 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           disabled={!canScan || Boolean(working)}
           onClick={() => void run("monitor")}
         >
-          <span className="action-icon">◉</span>
+          <span className="action-icon" aria-hidden="true">
+            ◉
+          </span>
           <span>
             <strong>开始完整嗅探</strong>
             <small>
@@ -170,10 +186,12 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           disabled={!canScan || Boolean(working)}
           onClick={() => setShowCrawlConfig(true)}
         >
-          <span className="action-icon">⌘</span>
+          <span className="action-icon" aria-hidden="true">
+            ⌘
+          </span>
           <span>
             <strong>同域递归扫描</strong>
-            <small>结合页面链接、Sitemap 与当前 SPA DOM 扫描同源公开页面</small>
+            <small>结合页面链接、HTTP Link、Sitemap 与当前 SPA DOM 扫描同源公开页面</small>
           </span>
         </button>
       </div>
