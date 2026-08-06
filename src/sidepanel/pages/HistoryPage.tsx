@@ -123,7 +123,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
   };
 
   return (
-    <section className="page history-page">
+    <section className="page history-page" aria-busy={Boolean(busy)}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">仅保存在本地</p>

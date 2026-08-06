@@ -75,6 +75,31 @@ describe("scanDocument", () => {
     );
   });
 
+  it("发现 object 内明确命名的 param 资源并忽略无关参数", () => {
+    document.body.innerHTML = `
+      <object>
+        <param name="movie" value="/api/legacy-player">
+        <param name="src" value="/files/legacy-audio.mp3">
+        <param name="quality" value="high">
+      </object>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({ includeStylesheets: false });
+
+    expect(result.baseUrl).toBe(document.baseURI);
+    expect(result.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: `${location.origin}/api/legacy-player`,
+          resourceHint: "resource"
+        }),
+        expect.objectContaining({ url: `${location.origin}/files/legacy-audio.mp3` })
+      ])
+    );
+    expect(result.resources.some((item) => item.url.endsWith("/high"))).toBe(false);
+  });
+
   it("发现常见懒加载背景、data-srcset 与 SVG 引用资源", () => {
     document.body.innerHTML = `
       <img data-srcset="/lazy-small.webp 1x, /lazy-large.webp 2x">

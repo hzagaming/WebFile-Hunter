@@ -51,6 +51,50 @@ function renderResults() {
 }
 
 describe("ResultsPage", () => {
+  it("刷新期间公开忙碌状态并阻止重复操作", async () => {
+    const user = userEvent.setup();
+    let finishRefresh!: () => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
+    const session = scanSession({ filesDiscovered: 1 });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [fileCandidate("busy")] })}
+        refresh={refresh}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "刷新" }));
+
+    expect(screen.getByRole("region", { name: "发现结果" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "刷新中…" })).toBeDisabled();
+    finishRefresh();
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+  });
+
+  it("单项操作期间保持准确按钮文案并禁用重复操作", async () => {
+    const user = userEvent.setup();
+    let finishOpen!: () => void;
+    mocks.openTab.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishOpen = resolve;
+      })
+    );
+    renderResults();
+
+    await user.click(screen.getAllByRole("button", { name: "来源页" })[0]!);
+
+    expect(screen.getByRole("region", { name: "发现结果" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "来源页" })[0]).toBeDisabled();
+    finishOpen();
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
+  });
+
   it("筛选后保留选择并明确显示隐藏选择，批量操作范围保持一致", async () => {
     const user = userEvent.setup();
     const { text } = renderResults();

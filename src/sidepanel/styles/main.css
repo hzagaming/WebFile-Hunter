@@ -192,6 +192,10 @@ h3 {
   font-size: 10px;
   white-space: nowrap;
 }
+.permission-chip.granted {
+  border-color: rgba(215, 255, 219, 0.52);
+  background: rgba(210, 255, 218, 0.17);
+}
 .tabs {
   position: sticky;
   z-index: 20;
@@ -216,9 +220,32 @@ h3 {
   font-size: 11px;
   min-width: 0;
 }
-.tabs button span {
+.tabs .tab-icon {
   font-size: 17px;
   line-height: 1;
+}
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.tab-count {
+  display: inline-grid;
+  min-width: 14px;
+  height: 14px;
+  place-items: center;
+  padding: 0 3px;
+  border-radius: 99px;
+  color: var(--primary-dark);
+  background: #dceff3;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+.tabs button.active .tab-count {
+  color: #fff;
+  background: var(--primary);
 }
 .tabs button.active {
   color: var(--primary);
@@ -232,6 +259,9 @@ h3 {
   max-width: 980px;
   margin: 0 auto;
   animation: page-in 180ms ease-out;
+}
+.page[aria-busy="true"] {
+  cursor: progress;
 }
 @keyframes page-in {
   from {

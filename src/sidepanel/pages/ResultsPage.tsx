@@ -95,6 +95,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const session = snapshot.activeSession;
   const possibleCount = snapshot.files.filter((file) => file.confidence < 50).length;
@@ -173,6 +174,20 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const hiddenSelectedCount = selectedFiles.length - visibleSelectedCount;
   const fail = (error: unknown, fallback: string): void =>
     setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
+
+  const refreshResults = async (): Promise<void> => {
+    setBusy(true);
+    setRefreshing(true);
+    setFeedback(undefined);
+    try {
+      await refresh(session?.id);
+    } catch (error) {
+      fail(error, "无法刷新扫描结果。");
+    } finally {
+      setRefreshing(false);
+      setBusy(false);
+    }
+  };
 
   const toggle = (id: string): void =>
     setSelected((current) => {
@@ -278,6 +293,8 @@ export function ResultsPage({ snapshot, refresh }: Props) {
 
   const probe = async (file: FileCandidate): Promise<void> => {
     if (!session) return;
+    setBusy(true);
+    setFeedback(undefined);
     try {
       await sendMessage({
         type: "PROBE_METADATA",
@@ -286,6 +303,8 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       await refresh(session.id);
     } catch (error) {
       fail(error, "元数据探测失败。");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -294,17 +313,20 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     success: string,
     fallback: string
   ): Promise<void> => {
+    setBusy(true);
     setFeedback(undefined);
     try {
       await action();
       setFeedback({ kind: "success", text: success });
     } catch (error) {
       fail(error, fallback);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <section className="page results-page">
+    <section className="page results-page" role="region" aria-label="发现结果" aria-busy={busy}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">本地结果库</p>
@@ -312,8 +334,8 @@ export function ResultsPage({ snapshot, refresh }: Props) {
             发现结果 <span className="count">{filtered.length}</span>
           </h2>
         </div>
-        <button type="button" onClick={() => void refresh(session?.id)}>
-          刷新
+        <button type="button" disabled={busy} onClick={() => void refreshResults()}>
+          {refreshing ? "刷新中…" : "刷新"}
         </button>
       </div>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
@@ -463,6 +485,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   type="checkbox"
                   aria-label={`选择 ${file.filename}`}
                   checked={selected.has(file.id)}
+                  disabled={busy}
                   onChange={() => toggle(file.id)}
                 />
                 <div className={`file-type type-${file.category}`}>
@@ -498,6 +521,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   <div className="card-actions">
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() =>
                         void runCardAction(
                           () => navigator.clipboard.writeText(file.finalUrl ?? file.canonicalUrl),
@@ -510,6 +534,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     </button>
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() =>
                         void runCardAction(
                           () => chrome.tabs.create({ url: file.sourcePageUrl }),
@@ -522,7 +547,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     </button>
                     <button
                       type="button"
-                      disabled={!openable}
+                      disabled={busy || !openable}
                       onClick={() =>
                         void runCardAction(
                           () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
@@ -535,7 +560,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     </button>
                     <button
                       type="button"
-                      disabled={!openable || !probeAllowed}
+                      disabled={busy || !openable || !probeAllowed}
                       title={
                         !openable
                           ? "临时或无效资源无法探测元数据"

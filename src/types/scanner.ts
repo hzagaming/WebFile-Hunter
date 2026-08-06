@@ -25,6 +25,7 @@ export interface ExtractedPageText {
 
 export interface PageScanResult {
   pageUrl: string;
+  baseUrl?: string;
   title: string;
   resources: RawResource[];
   pages: PageCandidate[];

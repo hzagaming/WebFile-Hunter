@@ -17,6 +17,7 @@ import { discoverScanRoots } from "./scan-roots";
 const MAX_ITEMS = 20_000;
 const MAX_TITLE_LENGTH = 2048;
 const MAX_URL_LENGTH = 16_384;
+const OBJECT_PARAM_RESOURCE_NAMES = new Set(["file", "filename", "movie", "src", "url"]);
 
 const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["a", ["href"]],
@@ -178,6 +179,11 @@ export function scanDocument(
     }
   }
 
+  for (const param of queryAll<HTMLParamElement>("object > param[name][value]")) {
+    if (!OBJECT_PARAM_RESOURCE_NAMES.has(param.name.trim().toLowerCase())) continue;
+    addResource(param.value, param, "value", "DOM_ATTRIBUTE", "resource");
+  }
+
   for (const element of queryAll<HTMLElement>("[style]")) {
     for (const raw of extractCssUrls(element.getAttribute("style") ?? "")) {
       addResource(raw, element, "style", "CSS_URL", "resource");
@@ -223,6 +229,7 @@ export function scanDocument(
 
   return {
     pageUrl: location.href,
+    baseUrl: document.baseURI,
     title: document.title.slice(0, MAX_TITLE_LENGTH),
     resources: [...resources.values()],
     pages: [...pages.values()]

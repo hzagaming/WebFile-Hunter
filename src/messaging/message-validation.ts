@@ -49,6 +49,7 @@ const rawResource = z
 const pageScanResult = z
   .object({
     pageUrl: z.string().max(16_384),
+    baseUrl: z.string().max(16_384).optional(),
     title: z.string().max(2048),
     resources: z.array(rawResource).max(20_000),
     pages: z

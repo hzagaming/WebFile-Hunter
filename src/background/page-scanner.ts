@@ -21,6 +21,35 @@ const RESOURCE_TAGS = new Set([
   "input"
 ]);
 const LATE_FRAME_WINDOW_MS = 30_000;
+const INHERITED_FRAME_URLS = new Set(["about:blank", "about:srcdoc"]);
+
+function inheritedFrameContext(
+  session: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+  result: PageScanResult,
+  sender: chrome.runtime.MessageSender
+): { pageUrl: URL; sourcePageUrl: string; parentUrl: string } | undefined {
+  if (!INHERITED_FRAME_URLS.has(result.pageUrl)) return undefined;
+  if (
+    !Number.isInteger(sender.frameId) ||
+    (sender.frameId ?? 0) <= 0 ||
+    sender.url !== result.pageUrl ||
+    !result.baseUrl
+  ) {
+    throw new TypeError("内嵌 Frame 的继承来源无效。");
+  }
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(result.baseUrl);
+  } catch {
+    throw new TypeError("内嵌 Frame 的继承来源无效。");
+  }
+  if (!["http:", "https:"].includes(baseUrl.protocol) || baseUrl.origin !== session.origin) {
+    throw new TypeError("内嵌 Frame 的继承来源与扫描任务不一致。");
+  }
+  const frameUrl = new URL(baseUrl);
+  frameUrl.hash = `webfile-hunter-frame-${sender.frameId}`;
+  return { pageUrl: frameUrl, sourcePageUrl: frameUrl.href, parentUrl: baseUrl.href };
+}
 
 export function shouldKeepPageResource(resource: RawResource): boolean {
   return (
@@ -82,18 +111,21 @@ export async function handlePageScanResult(
   } catch {
     throw new TypeError("页面扫描结果包含无效页面地址。");
   }
-  if (!["http:", "https:"].includes(pageUrl.protocol))
+  const inheritedFrame = inheritedFrameContext(session, result, sender);
+  if (inheritedFrame) pageUrl = inheritedFrame.pageUrl;
+  else if (!["http:", "https:"].includes(pageUrl.protocol))
     throw new TypeError("页面扫描结果协议无效。");
-  const isExternalFrame = pageUrl.origin !== session.origin;
+  const isExternalFrame = !inheritedFrame && pageUrl.origin !== session.origin;
   if (isExternalFrame && !(await hasAllSitesPermission()))
     throw new TypeError("页面扫描结果 origin 与扫描任务不一致。");
 
   const queuedPages =
     session.mode === "recursive_crawl"
-      ? enqueueCrawlerPages(session, result.pageUrl, result.pages)
+      ? enqueueCrawlerPages(session, inheritedFrame?.parentUrl ?? result.pageUrl, result.pages)
       : 0;
   const settings = await getSettings();
-  const sourcePageUrl = isExternalFrame ? session.startUrl : result.pageUrl;
+  const sourcePageUrl =
+    inheritedFrame?.sourcePageUrl ?? (isExternalFrame ? session.startUrl : result.pageUrl);
   const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
     if (resource.resourceHint === "image" && !settings.scanImages) return [];
     try {
@@ -102,7 +134,11 @@ export async function handlePageScanResult(
         source: resource.source,
         sourcePageUrl,
         sourcePageTitle: result.title,
-        ...(isExternalFrame ? { parentUrl: result.pageUrl } : {}),
+        ...(inheritedFrame
+          ? { parentUrl: inheritedFrame.parentUrl }
+          : isExternalFrame
+            ? { parentUrl: result.pageUrl }
+            : {}),
         tabId: session.tabId,
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
@@ -120,7 +156,7 @@ export async function handlePageScanResult(
   if (stored.length) broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: stored } });
   if (!liveBatch && result.text?.content) {
     const document = await putPageText(sessionId, {
-      pageUrl: result.pageUrl,
+      pageUrl: sourcePageUrl,
       title: result.title,
       content: result.text.content,
       ...(result.text.language ? { language: result.text.language } : {}),

@@ -405,6 +405,19 @@ try {
       rows.files.some(
         (file) =>
           file.sessionId === currentSession.id &&
+          file.canonicalUrl.endsWith("/files/srcdoc-only.mp3") &&
+          file.sourcePageUrl.includes("#webfile-hunter-frame-") &&
+          file.parentUrl === `${server.origin}/`
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/api/legacy-player` &&
+          file.confidence >= 70
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
           file.warnings.includes("temporary_blob") &&
           file.isDownloadable === false
       ) &&
@@ -485,6 +498,12 @@ try {
           !document.content.includes("input-text-secret") &&
           !document.content.includes("textarea-text-secret") &&
           !document.content.includes("editable-text-secret")
+      ) &&
+      rows.texts.some(
+        (document) =>
+          document.sessionId === currentSession.id &&
+          document.pageUrl.includes("#webfile-hunter-frame-") &&
+          document.content.includes("srcdoc Frame 公开正文 gamma")
       )
   );
   const currentFiles = currentRows.files.filter((file) => file.sessionId === currentSession.id);
@@ -693,6 +712,7 @@ try {
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/alternate-only.txt")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/mapped-only.csv")) ||
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/header-next.zip")) ||
+    !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/refresh-only.txt")) ||
     !recursiveFiles.some(
       (file) =>
         file.canonicalUrl.endsWith("/api/header-document") && file.mimeType === "application/pdf"
@@ -744,7 +764,7 @@ try {
         file.canonicalUrl === `${fallbackOrigin}/files/fallback-only.json`
     )
   ) {
-    throw new Error("robots 未声明 Sitemap 时未发现公开根 Sitemap 资源。");
+    throw new Error("robots 未声明 Sitemap 时未从标准压缩入口发现公开资源。");
   }
   await fallbackPage.close();
 
@@ -862,6 +882,9 @@ try {
     .first();
   await currentHistoryCard.getByRole("button", { name: "查看文字" }).click();
   await sidepanelPage.getByRole("heading", { name: "网页文字" }).waitFor();
+  await sidepanelPage
+    .getByRole("combobox", { name: "选择网页" })
+    .selectOption({ label: "WebFile Hunter 演示站" });
   await sidepanelPage
     .getByText("WebFile Hunter 正文提取夹具 alpha beta beta", {
       exact: false

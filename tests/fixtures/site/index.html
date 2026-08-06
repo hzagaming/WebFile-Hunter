@@ -43,6 +43,14 @@
     <a type="application/pdf" href="/api/typed-document">无后缀 PDF</a>
     <a itemprop="contentUrl" href="/api/itemprop-video">无后缀结构化视频</a>
     <audio controls src="/files/example.mp3"></audio>
+    <object aria-label="旧式公开媒体资源">
+      <param name="movie" value="/api/legacy-player" />
+      <param name="quality" value="high" />
+    </object>
+    <iframe
+      title="同源 srcdoc 公开内容"
+      srcdoc='<p>srcdoc Frame 公开正文 gamma</p><a href="/files/srcdoc-only.mp3">Frame 音频</a>'
+    ></iframe>
     <img src="/files/pixel.png" alt="测试像素" />
     <template id="resource-template">
       <a type="application/pdf" href="/api/template-document">模板文档</a>

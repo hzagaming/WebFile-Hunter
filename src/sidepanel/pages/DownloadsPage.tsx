@@ -78,7 +78,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
   const clearable = (counts.completed?.length ?? 0) + (counts.cancelled?.length ?? 0);
 
   return (
-    <section className="page downloads-page">
+    <section className="page downloads-page" aria-busy={working}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">用户确认后执行</p>

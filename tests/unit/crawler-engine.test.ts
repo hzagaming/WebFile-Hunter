@@ -406,6 +406,51 @@ describe("crawler engine lifecycle", () => {
     );
   });
 
+  it("根 Sitemap XML 不存在时继续尝试标准 gzip 入口", async () => {
+    const compressedPage = "https://example.test/compressed-page";
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        if (url.endsWith("/robots.txt")) return Promise.resolve(new Response("", { status: 200 }));
+        if (url.endsWith("/sitemap.xml.gz")) {
+          return Promise.resolve(
+            new Response(`<urlset><url><loc>${compressedPage}</loc></url></urlset>`, {
+              status: 200,
+              headers: { "Content-Encoding": "gzip", "Content-Type": "application/xml" }
+            })
+          );
+        }
+        if (url === compressedPage) {
+          return Promise.resolve(
+            new Response("<title>压缩 Sitemap 页面</title>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" }
+            })
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(compressedPage);
+    expect(mocks.fetchWithRetries).toHaveBeenCalledWith(
+      "https://example.test/sitemap.xml.gz",
+      { method: "GET" },
+      expect.any(Object)
+    );
+  });
+
   it("根 Sitemap 回退仍遵守 robots 禁止规则", async () => {
     mocks.readLimitedText.mockImplementation((response: Response) => response.text());
     mocks.safeFetch.mockImplementation(
@@ -482,6 +527,37 @@ describe("crawler engine lifecycle", () => {
         source: "NETWORK_HEADER"
       })
     );
+  });
+
+  it("从 HTTP Refresh 响应头继续安全的同源页面", async () => {
+    const refreshedUrl = "https://example.test/refreshed";
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        return Promise.resolve(
+          new Response(`<title>${url === refreshedUrl ? "Refreshed" : "Start"}</title>`, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/html",
+              ...(url === refreshedUrl ? {} : { Refresh: "0; url=/refreshed" })
+            }
+          })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, maxDepth: 2, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toContain(refreshedUrl);
   });
 
   it("所有页面都抓取失败时返回失败终态而非空完成", async () => {

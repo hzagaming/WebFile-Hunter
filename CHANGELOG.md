@@ -1,5 +1,15 @@
 # 更新记录
 
+## 1.5.0 - 2026-08-06
+
+- 当前页与完整嗅探安全接收同源继承来源的 `about:srcdoc` / `about:blank` Frame 结果，发现其中公开资源与可见正文；独立 Frame 地址避免覆盖父页文本。
+- DOM 与递归 HTML 新增 `<object>` 内明确命名的 `movie`、`src`、`url`、`file`、`filename` param 资源，拒绝通用及游离 param 噪声。
+- 同源递归新增 HTTP `Refresh` 响应头导航，并在 robots 未声明 Sitemap 时新增标准根入口 `/sitemap.xml.gz`；继续执行同源、robots、危险 URL、深度、页面、并发和速率限制。
+- 结果页刷新补齐错误捕获、忙碌反馈和重复操作保护；文字、下载、历史、设置及递归配置统一暴露 `aria-busy` 状态。
+- 六栏导航新增结果、文字与下载实时计数，授权状态增强视觉区分；递归配置补齐展开关系、禁用态与键盘语义。
+- 真实 Edge E2E 覆盖 srcdoc Frame、object param、HTTP Refresh、压缩 Sitemap 回退、28 个当前页候选、9 页/36 个递归候选和 280/320/380px 六页侧栏。
+- 扩展继续完全本地运行，默认静音，不播放 SFX 或 BGM，不执行目录爆破、登录绕过或 DRM 规避。
+
 ## 1.4.0 - 2026-08-05
 
 - CSS 发现新增裸 `@import`、标准/前缀 `image-set`、递归导入样式表和 Document/开放 Shadow Root 构造样式表；相对资源按各自样式表 URL 正确解析。

@@ -4,6 +4,7 @@ import { extractLinksFromHtml } from "@/core/html-link-extractor";
 import { extractHttpLinkHeader } from "@/core/http-link-header";
 import { isHtmlMime } from "@/core/mime-map";
 import { parseSitemapXml } from "@/core/sitemap-parser";
+import { extractRefreshTarget } from "@/core/refresh-target";
 import { inspectUrlSafety } from "@/core/url-security";
 import { normalizeUrl, redactUrlForLog } from "@/core/url-normalizer";
 import {
@@ -164,7 +165,11 @@ async function seedSitemaps(
   const pending = robots.sitemaps.length
     ? [...robots.sitemaps]
     : session.config.respectRobots
-      ? [`${session.origin}/sitemap.xml`, `${session.origin}/sitemap_index.xml`]
+      ? [
+          `${session.origin}/sitemap.xml`,
+          `${session.origin}/sitemap_index.xml`,
+          `${session.origin}/sitemap.xml.gz`
+        ]
       : [];
   const visited = new Set<string>();
   while (pending.length && visited.size < MAX_SITEMAP_FILES && !active.controller.signal.aborted) {
@@ -321,6 +326,10 @@ async function processPage(
     response.headers.get("link") ?? undefined,
     metadata.finalUrl
   );
+  const headerRefresh = extractRefreshTarget(
+    response.headers.get("refresh") ?? undefined,
+    metadata.finalUrl
+  );
   const shouldParseHtml =
     isHtmlMime(metadata.mimeType) || (!metadata.mimeType && !looksLikeFileUrl(item.url));
   if (!shouldParseHtml) {
@@ -371,6 +380,9 @@ async function processPage(
     const pages = [...extracted.pages, ...headerLinks.pages];
     if (extracted.metaRefresh) {
       pages.push({ url: extracted.metaRefresh, tagName: "meta", noFollow: false });
+    }
+    if (headerRefresh) {
+      pages.push({ url: headerRefresh, tagName: "header", noFollow: false });
     }
     if (extracted.canonicalUrl && extracted.canonicalUrl !== finalUrl) {
       pages.push({ url: extracted.canonicalUrl, tagName: "link", noFollow: false });

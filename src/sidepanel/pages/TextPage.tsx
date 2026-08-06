@@ -106,7 +106,7 @@ export function TextPage({ snapshot, refresh }: Props) {
   };
 
   return (
-    <section className="page text-page">
+    <section className="page text-page" aria-busy={Boolean(busy)}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">纯文本 · 仅保存在本地</p>

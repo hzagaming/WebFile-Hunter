@@ -31,16 +31,25 @@ export async function startTestServer() {
       response.end("User-agent: *\n");
       return;
     }
-    if (hostname === "fallback.wfh.test" && url.pathname === "/sitemap.xml") {
-      response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8" });
-      response.end(
-        '<?xml version="1.0"?><urlset><url><loc>http://fallback.wfh.test/fallback-only.html</loc></url></urlset>'
-      );
-      return;
-    }
-    if (hostname === "fallback.wfh.test" && url.pathname === "/sitemap_index.xml") {
+    if (
+      hostname === "fallback.wfh.test" &&
+      ["/sitemap.xml", "/sitemap_index.xml"].includes(url.pathname)
+    ) {
       response.writeHead(404);
       response.end("Not found");
+      return;
+    }
+    if (hostname === "fallback.wfh.test" && url.pathname === "/sitemap.xml.gz") {
+      const content = gzipSync(
+        Buffer.from(
+          '<?xml version="1.0"?><urlset><url><loc>http://fallback.wfh.test/fallback-only.html</loc></url></urlset>'
+        )
+      );
+      response.writeHead(200, {
+        "Content-Type": "application/gzip",
+        "Content-Length": String(content.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : content);
       return;
     }
     if (url.pathname === "/api/header-document") {
@@ -248,6 +257,9 @@ export async function startTestServer() {
           ? {
               Link: '</api/header-document>; rel=preload; type="application/pdf", </header-next.html>; rel=next'
             }
+          : {}),
+        ...(hostname === "wfh.test" && url.pathname === "/page-1.html"
+          ? { Refresh: "0; url=/refresh-only.html" }
           : {})
       });
       response.end(request.method === "HEAD" ? undefined : content);

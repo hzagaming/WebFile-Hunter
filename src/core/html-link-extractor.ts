@@ -14,6 +14,7 @@ import { normalizeUrl, sameOrigin } from "./url-normalizer";
 import type { RawResource } from "@/types/scanner";
 import type { ExtractedHtmlLinks, PageCandidate } from "@/types/scanner";
 import { MAX_PAGE_TEXT_CHARACTERS, MAX_TEXT_LANGUAGE_LENGTH } from "./page-text-policy";
+import { extractRefreshTarget } from "./refresh-target";
 
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
@@ -52,6 +53,7 @@ const DATA_ATTRIBUTES = [
   "data-image",
   "data-thumb"
 ];
+const OBJECT_PARAM_RESOURCE_NAMES = new Set(["file", "filename", "movie", "src", "url"]);
 
 const TEXT_EXCLUDED_TAGS = new Set([
   "head",
@@ -286,14 +288,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
       const content = attrs.get("content") ?? "";
       if (name === "robots" && robotsMetaNoFollow(content)) noFollow = true;
       if (attrs.get("http-equiv")?.toLowerCase() === "refresh") {
-        const target = /(?:^|;)\s*url\s*=\s*['"]?([^'"]+)['"]?/i.exec(content)?.[1]?.trim();
-        if (target) {
-          try {
-            metaRefresh = normalizeUrl(target, baseUrl).canonicalUrl;
-          } catch {
-            metaRefresh = undefined;
-          }
-        }
+        metaRefresh = extractRefreshTarget(content, baseUrl);
       }
       const resourceKind = metaResourceKind({
         name: attrs.get("name"),
@@ -362,6 +357,16 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     if (element.tagName === "style") {
       for (const raw of extractCssUrls(textContent(element)))
         addResource(raw, "CSS_URL", element, undefined, "resource");
+    }
+    if (
+      element.tagName === "param" &&
+      element.parentNode &&
+      "tagName" in element.parentNode &&
+      element.parentNode.tagName === "object" &&
+      OBJECT_PARAM_RESOURCE_NAMES.has((attrs.get("name") ?? "").trim().toLowerCase())
+    ) {
+      const value = attrs.get("value");
+      if (value) addResource(value, "CRAWLED_PAGE", element, "value", "resource");
     }
     const style = attrs.get("style");
     if (style)

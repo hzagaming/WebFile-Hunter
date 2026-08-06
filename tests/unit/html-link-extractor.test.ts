@@ -155,6 +155,32 @@ describe("extractLinksFromHtml", () => {
     );
   });
 
+  it("从静态 object param 发现明确资源且不扫描通用参数值", () => {
+    const result = extractLinksFromHtml(
+      `
+        <object>
+          <param name="movie" value="/api/legacy-player">
+          <param name="url" value="/files/legacy-video.mp4">
+          <param name="autoplay" value="true">
+        </object>
+        <param name="url" value="/api/stray-noise">
+      `,
+      "https://example.test/article"
+    );
+
+    expect(result.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://example.test/api/legacy-player",
+          resourceHint: "resource"
+        }),
+        expect.objectContaining({ url: "https://example.test/files/legacy-video.mp4" })
+      ])
+    );
+    expect(result.resources.some((item) => item.url.endsWith("/true"))).toBe(false);
+    expect(result.resources.some((item) => item.url.endsWith("/api/stray-noise"))).toBe(false);
+  });
+
   it("忽略非 GET 表单 action 但保留普通 GET 页面入口", () => {
     const result = extractLinksFromHtml(
       [

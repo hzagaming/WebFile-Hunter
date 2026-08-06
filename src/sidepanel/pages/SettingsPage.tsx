@@ -152,7 +152,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
   };
 
   return (
-    <section className={`page settings-page ${standalone ? "standalone" : ""}`}>
+    <section className={`page settings-page ${standalone ? "standalone" : ""}`} aria-busy={working}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">本地与最小权限</p>

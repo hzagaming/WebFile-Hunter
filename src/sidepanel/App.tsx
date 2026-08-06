@@ -22,6 +22,13 @@ export function App() {
   const [tab, setTab] = useState<Tab>("scan");
   const state = useAppSnapshot();
   const host = displayHost(state.snapshot?.activeTab?.url);
+  const counts: Partial<Record<Tab, number>> = state.snapshot
+    ? {
+        results: state.snapshot.files.length,
+        text: state.snapshot.textDocuments.length,
+        downloads: state.snapshot.downloads.length
+      }
+    : {};
 
   return (
     <div className="app-shell">
@@ -33,7 +40,7 @@ export function App() {
           <h1>WebFile Hunter</h1>
           <p title={state.snapshot?.activeTab?.url}>当前网站：{host}</p>
         </div>
-        <span className="permission-chip">
+        <span className={`permission-chip ${state.snapshot?.allSitesAccess ? "granted" : ""}`}>
           {state.snapshot?.allSitesAccess ? "完整嗅探已授权" : "按站点授权"}
         </span>
       </header>
@@ -56,8 +63,18 @@ export function App() {
             aria-current={tab === item.id ? "page" : undefined}
             onClick={() => setTab(item.id)}
           >
-            <span aria-hidden="true">{item.icon}</span>
-            {item.label}
+            <span className="tab-icon" aria-hidden="true">
+              {item.icon}
+            </span>
+            <span className="tab-label">
+              {item.label}
+              {counts[item.id] ? (
+                <span className="tab-count" aria-hidden="true">
+                  {Math.min(counts[item.id] ?? 0, 99)}
+                  {(counts[item.id] ?? 0) > 99 ? "+" : ""}
+                </span>
+              ) : null}
+            </span>
           </button>
         ))}
       </nav>

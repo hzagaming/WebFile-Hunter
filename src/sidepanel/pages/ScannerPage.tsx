@@ -166,6 +166,8 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         <button
           className="action-card"
           type="button"
+          aria-expanded={showCrawlConfig}
+          aria-controls="crawl-config"
           disabled={!canScan || Boolean(working)}
           onClick={() => void run("monitor")}
         >
@@ -197,13 +199,14 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
       </div>
 
       {showCrawlConfig ? (
-        <div className="config-panel">
+        <div id="crawl-config" className="config-panel" aria-busy={working === "crawl"}>
           <div className="section-heading">
             <h3>递归扫描确认</h3>
             <button
               className="icon-button"
               type="button"
               aria-label="关闭递归扫描设置"
+              disabled={Boolean(working)}
               onClick={() => setShowCrawlConfig(false)}
             >
               ×
@@ -219,6 +222,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="0"
                 max="5"
+                disabled={Boolean(working)}
                 value={config.maxDepth}
                 onChange={(e) => setConfig({ ...config, maxDepth: Number(e.target.value) })}
               />
@@ -229,6 +233,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="1"
                 max="2000"
+                disabled={Boolean(working)}
                 value={config.maxPages}
                 onChange={(e) => setConfig({ ...config, maxPages: Number(e.target.value) })}
               />
@@ -239,6 +244,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="1"
                 max="6"
+                disabled={Boolean(working)}
                 value={config.maxConcurrency}
                 onChange={(e) => setConfig({ ...config, maxConcurrency: Number(e.target.value) })}
               />
@@ -249,6 +255,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="500"
                 step="100"
+                disabled={Boolean(working)}
                 value={config.minDelayMs}
                 onChange={(e) => setConfig({ ...config, minDelayMs: Number(e.target.value) })}
               />
@@ -259,6 +266,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="1"
                 max="120"
+                disabled={Boolean(working)}
                 value={config.requestTimeoutMs / 1000}
                 onChange={(e) =>
                   setConfig({ ...config, requestTimeoutMs: Number(e.target.value) * 1000 })
@@ -271,6 +279,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 type="number"
                 min="0"
                 max="3"
+                disabled={Boolean(working)}
                 value={config.retries}
                 onChange={(e) => setConfig({ ...config, retries: Number(e.target.value) })}
               />
@@ -280,6 +289,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
             <label>
               <input
                 type="checkbox"
+                disabled={Boolean(working)}
                 checked={config.respectRobots}
                 onChange={(e) => setConfig({ ...config, respectRobots: e.target.checked })}
               />
@@ -288,6 +298,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
             <label>
               <input
                 type="checkbox"
+                disabled={Boolean(working)}
                 checked={config.probeMetadata}
                 onChange={(e) => setConfig({ ...config, probeMetadata: e.target.checked })}
               />
@@ -296,6 +307,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
             <label>
               <input
                 type="checkbox"
+                disabled={Boolean(working)}
                 checked={config.excludeDangerousActions}
                 onChange={(e) =>
                   setConfig({ ...config, excludeDangerousActions: e.target.checked })

@@ -136,6 +136,72 @@ describe("handlePageScanResult security", () => {
     ).resolves.toBe(0);
   });
 
+  it("安全接收同源 srcdoc frame 的资源与正文并使用独立文本地址", async () => {
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+    mocks.putPageText.mockResolvedValue({
+      id: "text-srcdoc",
+      pageUrl: "https://example.test/page#webfile-hunter-frame-7",
+      title: "内嵌公开内容",
+      content: "srcdoc 公开正文",
+      characterCount: 12,
+      capturedAt: 1,
+      truncated: false
+    });
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        {
+          pageUrl: "about:srcdoc",
+          baseUrl: "https://example.test/page",
+          title: "内嵌公开内容",
+          resources: [
+            {
+              url: "https://example.test/files/srcdoc-audio.mp3",
+              source: "DOM_ATTRIBUTE",
+              tagName: "audio",
+              isExternal: false
+            }
+          ],
+          pages: [],
+          text: { content: "srcdoc 公开正文", truncated: false }
+        },
+        { tab: { id: 1 }, frameId: 7, url: "about:srcdoc" } as chrome.runtime.MessageSender,
+        false
+      )
+    ).resolves.toBe(1);
+
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toMatchObject({
+      sourcePageUrl: "https://example.test/page#webfile-hunter-frame-7",
+      parentUrl: "https://example.test/page"
+    });
+    expect(mocks.putPageText).toHaveBeenCalledWith(
+      "session-fixture",
+      expect.objectContaining({
+        pageUrl: "https://example.test/page#webfile-hunter-frame-7",
+        content: "srcdoc 公开正文"
+      })
+    );
+  });
+
+  it("拒绝无法证明同源继承关系的 about frame 结果", async () => {
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        {
+          pageUrl: "about:blank",
+          baseUrl: "https://other.test/frame",
+          title: "不可信内嵌页",
+          resources: [],
+          pages: []
+        },
+        { tab: { id: 1 }, frameId: 2, url: "about:blank" } as chrome.runtime.MessageSender,
+        false
+      )
+    ).rejects.toThrow("继承来源");
+    expect(mocks.putFiles).not.toHaveBeenCalled();
+  });
+
   it("收到当前页结果后立即完成任务，不依赖后台定时器", async () => {
     await handlePageScanResult(
       "session-fixture",
