@@ -38,6 +38,36 @@ describe("CrawlerQueue", () => {
     ).toBe(false);
   });
 
+  it("限制同一路径的查询参数变体以避免筛选陷阱", () => {
+    const queue = new CrawlerQueue(2, 20);
+    for (let page = 1; page <= 5; page += 1) {
+      expect(
+        queue.enqueue({
+          url: `https://e.test/catalog?page=${page}`,
+          depth: 1,
+          parentUrl: "https://e.test/",
+          discoveredAt: page
+        })
+      ).toBe(true);
+    }
+    expect(
+      queue.enqueue({
+        url: "https://e.test/catalog?page=6",
+        depth: 1,
+        parentUrl: "https://e.test/",
+        discoveredAt: 6
+      })
+    ).toBe(false);
+    expect(
+      queue.enqueue({
+        url: "https://e.test/catalog/archive?page=6",
+        depth: 1,
+        parentUrl: "https://e.test/",
+        discoveredAt: 7
+      })
+    ).toBe(true);
+  });
+
   it("支持序列化恢复、暂停、继续与取消", () => {
     const queue = new CrawlerQueue(2, 10);
     queue.enqueue({ url: "https://e.test/", depth: 0, parentUrl: null, discoveredAt: 1 });

@@ -7,20 +7,42 @@ const exact: Record<string, FileCategory> = {
   "application/x-7z-compressed": "archive",
   "application/x-rar-compressed": "archive",
   "application/gzip": "archive",
+  "application/x-tar": "archive",
+  "application/x-bzip2": "archive",
   "application/json": "data",
+  "application/ld+json": "data",
+  "application/x-ndjson": "data",
   "application/xml": "data",
-  "application/wasm": "data",
-  "font/otf": "data",
-  "font/ttf": "data",
-  "font/woff": "data",
-  "font/woff2": "data",
+  "application/wasm": "code",
+  "application/javascript": "code",
+  "application/x-javascript": "code",
+  "text/javascript": "code",
+  "text/css": "code",
+  "application/vnd.apple.mpegurl": "video",
+  "application/x-mpegurl": "video",
+  "application/dash+xml": "video",
+  "font/otf": "font",
+  "font/ttf": "font",
+  "font/woff": "font",
+  "font/woff2": "font",
+  "application/vnd.ms-fontobject": "font",
   "text/csv": "data",
   "text/vtt": "subtitle",
   "application/x-subrip": "subtitle",
+  "application/msword": "document",
+  "application/vnd.ms-excel": "document",
+  "application/vnd.ms-powerpoint": "document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "document"
 };
+
+const generic = new Set(["application/octet-stream", "binary/octet-stream", "text/plain"]);
+const segmented = new Set([
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "application/dash+xml"
+]);
 
 export function normalizeMimeType(value?: string): string | undefined {
   const mime = value?.split(";", 1)[0]?.trim().toLowerCase();
@@ -37,6 +59,16 @@ export function categoryFromMime(value?: string): FileCategory | undefined {
   if (mime.startsWith("text/")) return "text";
   if (mime === "application/octet-stream") return "unknown";
   return undefined;
+}
+
+export function isGenericMime(value?: string): boolean {
+  const mime = normalizeMimeType(value);
+  return Boolean(mime && generic.has(mime));
+}
+
+export function isSegmentedStreamMime(value?: string): boolean {
+  const mime = normalizeMimeType(value);
+  return Boolean(mime && segmented.has(mime));
 }
 
 export function isHtmlMime(value?: string): boolean {

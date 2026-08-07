@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ResultsPage } from "@/sidepanel/pages/ResultsPage";
@@ -265,6 +265,51 @@ describe("ResultsPage", () => {
     await user.click(screen.getAllByRole("button", { name: "复制" })[0]!);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("剪贴板不可用");
+  });
+
+  it("文件详情提供复制文件名、Markdown 与元数据 JSON 操作", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mocks.writeText }
+    });
+    const { text } = renderResults();
+    const trigger = screen.getAllByRole("button", { name: "详情" })[0]!;
+
+    await user.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: `文件详情：${text.filename}` });
+    expect(document.querySelector(".section-heading")).toHaveAttribute("inert");
+    expect(within(dialog).getByText(text.canonicalUrl)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "复制文件名" }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenLastCalledWith(text.filename));
+    await user.click(within(dialog).getByRole("button", { name: "复制 Markdown" }));
+    await waitFor(() =>
+      expect(mocks.writeText).toHaveBeenLastCalledWith(`[${text.filename}](${text.canonicalUrl})`)
+    );
+    await user.click(within(dialog).getByRole("button", { name: "复制元数据 JSON" }));
+    await waitFor(() =>
+      expect(mocks.writeText).toHaveBeenLastCalledWith(
+        expect.stringContaining(`"id": "${text.id}"`)
+      )
+    );
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("文件详情打开链接失败时显示错误并保持弹层可用", async () => {
+    const user = userEvent.setup();
+    mocks.openTab.mockRejectedValueOnce(new Error("浏览器拒绝打开标签页"));
+    renderResults();
+
+    await user.click(screen.getAllByRole("button", { name: "详情" })[0]!);
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "打开资源" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("浏览器拒绝打开标签页");
+    expect(within(dialog).getByRole("button", { name: "关闭文件详情" })).toBeEnabled();
   });
 
   it("单项打开操作只创建一个标签页", async () => {

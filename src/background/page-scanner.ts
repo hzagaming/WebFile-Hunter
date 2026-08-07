@@ -63,21 +63,33 @@ export function shouldKeepPageResource(resource: RawResource): boolean {
 }
 
 export async function injectPageScanner(sessionId: string, tabId: number): Promise<void> {
-  const settings = await getSettings();
+  const [settings, session] = await Promise.all([getSettings(), getSession(sessionId)]);
+  if (!session || session.tabId !== tabId) throw new TypeError("扫描任务无效或标签页不匹配。");
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     world: "ISOLATED",
-    func: (id: string, options: { includeStylesheets: boolean; includeImages: boolean }) => {
+    func: (
+      id: string,
+      options: { includeStylesheets: boolean; includeImages: boolean; includeText: boolean }
+    ) => {
       const scope = globalThis as typeof globalThis & {
         __webFileHunterInjectedSessionId?: string;
-        __webFileHunterInjectedOptions?: { includeStylesheets: boolean; includeImages: boolean };
+        __webFileHunterInjectedOptions?: {
+          includeStylesheets: boolean;
+          includeImages: boolean;
+          includeText: boolean;
+        };
       };
       scope.__webFileHunterInjectedSessionId = id;
       scope.__webFileHunterInjectedOptions = options;
     },
     args: [
       sessionId,
-      { includeStylesheets: settings.scanStylesheets, includeImages: settings.scanImages }
+      {
+        includeStylesheets: settings.scanStylesheets,
+        includeImages: settings.scanImages,
+        includeText: session.config.capturePageText
+      }
     ]
   });
   await chrome.scripting.executeScript({
@@ -128,6 +140,7 @@ export async function handlePageScanResult(
     inheritedFrame?.sourcePageUrl ?? (isExternalFrame ? session.startUrl : result.pageUrl);
   const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
     if (resource.resourceHint === "image" && !settings.scanImages) return [];
+    if (resource.source === "CSS_URL" && !settings.scanStylesheets) return [];
     try {
       const candidate = createFileCandidate({
         url: resource.url,
@@ -154,7 +167,7 @@ export async function handlePageScanResult(
   });
   const stored = await putFiles(sessionId, candidates);
   if (stored.length) broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: stored } });
-  if (!liveBatch && result.text?.content) {
+  if (!liveBatch && session.config.capturePageText && result.text?.content) {
     const document = await putPageText(sessionId, {
       pageUrl: sourcePageUrl,
       title: result.title,

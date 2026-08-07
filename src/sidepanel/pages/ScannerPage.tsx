@@ -239,6 +239,19 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
               />
             </label>
             <label>
+              同路径查询变体
+              <input
+                type="number"
+                min="1"
+                max="50"
+                disabled={Boolean(working)}
+                value={config.maxQueryVariantsPerPath}
+                onChange={(e) =>
+                  setConfig({ ...config, maxQueryVariantsPerPath: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label>
               并发数
               <input
                 type="number"
@@ -294,6 +307,33 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
                 onChange={(e) => setConfig({ ...config, respectRobots: e.target.checked })}
               />
               尊重 robots.txt
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                disabled={Boolean(working)}
+                checked={config.discoverSitemaps}
+                onChange={(e) => setConfig({ ...config, discoverSitemaps: e.target.checked })}
+              />
+              发现 Sitemap
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                disabled={Boolean(working)}
+                checked={config.capturePageText}
+                onChange={(e) => setConfig({ ...config, capturePageText: e.target.checked })}
+              />
+              提取网页文字
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                disabled={Boolean(working)}
+                checked={config.followRedirects}
+                onChange={(e) => setConfig({ ...config, followRedirects: e.target.checked })}
+              />
+              跟随重定向（最多 {config.maxRedirects} 次）
             </label>
             <label>
               <input

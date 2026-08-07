@@ -1,5 +1,10 @@
 @import "theme.css";
 
+@font-face {
+  font-family: "WebFile Hunter Fixture";
+  src: url("/files/test-font.woff2") format("woff2");
+}
+
 body {
   max-width: 720px;
   margin: 3rem auto;

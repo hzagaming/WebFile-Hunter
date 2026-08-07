@@ -8,6 +8,7 @@ const scanConfig = z
     respectRobots: z.boolean(),
     maxDepth: z.number().int().min(0).max(5),
     maxPages: z.number().int().min(1).max(2000),
+    maxQueryVariantsPerPath: z.number().int().min(1).max(50),
     maxConcurrency: z.number().int().min(1).max(6),
     minDelayMs: z.number().int().min(500),
     requestTimeoutMs: z.number().int().min(1000).max(120_000),
@@ -16,6 +17,8 @@ const scanConfig = z
       .int()
       .min(1024)
       .max(5 * 1024 * 1024),
+    discoverSitemaps: z.boolean(),
+    capturePageText: z.boolean(),
     probeMetadata: z.boolean(),
     followRedirects: z.boolean(),
     maxRedirects: z.number().int().min(0).max(5),
@@ -92,6 +95,8 @@ const settings = z
         "image",
         "subtitle",
         "data",
+        "code",
+        "font",
         "unknown"
       ])
     ),
@@ -107,6 +112,8 @@ const settings = z
         "image",
         "subtitle",
         "data",
+        "code",
+        "font",
         "unknown"
       ])
     ),

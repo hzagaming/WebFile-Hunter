@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { scanSession } from "../helpers/fixtures";
 import type { FileCandidate } from "@/types/models";
+import { DEFAULT_SETTINGS } from "@/utils/defaults";
 
 const mocks = vi.hoisted(() => ({
   broadcast: vi.fn(),
@@ -35,14 +36,14 @@ vi.mock("@/background/permission-manager", () => ({
   hasAllSitesPermission: mocks.hasAllSitesPermission
 }));
 
-import { handlePageScanResult } from "@/background/page-scanner";
+import { handlePageScanResult, injectPageScanner } from "@/background/page-scanner";
 
 beforeEach(() => {
   globalThis.chrome = {
     alarms: { clear: vi.fn().mockResolvedValue(true) }
   } as unknown as typeof chrome;
   mocks.getSession.mockResolvedValue(scanSession({ status: "running" }));
-  mocks.getSettings.mockResolvedValue({ customExtensions: {}, customMimeTypes: {} });
+  mocks.getSettings.mockResolvedValue(structuredClone(DEFAULT_SETTINGS));
   mocks.hasAllSitesPermission.mockResolvedValue(false);
   mocks.enqueueCrawlerPages.mockReturnValue(0);
   mocks.putFiles.mockResolvedValue([]);
@@ -51,6 +52,26 @@ beforeEach(() => {
 });
 
 describe("handlePageScanResult security", () => {
+  it("注入脚本使用任务创建时的正文配置而不是运行期间的新设置", async () => {
+    mocks.getSession.mockResolvedValue(
+      scanSession({ config: { ...DEFAULT_SETTINGS.scan, capturePageText: false } })
+    );
+    const executeScript = vi
+      .fn<(details: { args?: unknown[] }) => Promise<unknown[]>>()
+      .mockResolvedValue([]);
+    globalThis.chrome = {
+      alarms: { clear: vi.fn().mockResolvedValue(true) },
+      scripting: { executeScript }
+    } as unknown as typeof chrome;
+
+    await injectPageScanner("session-fixture", 1);
+
+    expect(executeScript.mock.calls[0]?.[0].args).toEqual([
+      "session-fixture",
+      expect.objectContaining({ includeText: false })
+    ]);
+  });
+
   it("拒绝来自同一标签页但不同 origin 的页面扫描结果", async () => {
     await expect(
       handlePageScanResult(
@@ -343,6 +364,30 @@ describe("handlePageScanResult security", () => {
         false
       )
     ).rejects.toThrow("origin");
+    expect(mocks.putPageText).not.toHaveBeenCalled();
+  });
+
+  it("扫描配置关闭正文提取时忽略内容端传入的正文", async () => {
+    mocks.getSession.mockResolvedValue(
+      scanSession({
+        status: "running",
+        config: { ...scanSession().config, capturePageText: false }
+      })
+    );
+
+    await handlePageScanResult(
+      "session-fixture",
+      {
+        pageUrl: "https://example.test/page",
+        title: "page",
+        resources: [],
+        pages: [],
+        text: { content: "不应保存", truncated: false }
+      },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
     expect(mocks.putPageText).not.toHaveBeenCalled();
   });
 });

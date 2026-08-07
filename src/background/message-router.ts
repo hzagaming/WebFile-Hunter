@@ -163,7 +163,8 @@ export class MessageRouter {
         if (!(await hasOriginPermission(tab.url ?? ""))) {
           throw new TypeError("当前网站权限尚未授予。");
         }
-        const session = await createSession(tab, "current_page");
+        const settings = await getSettings();
+        const session = await createSession(tab, "current_page", settings.scan);
         try {
           await chrome.alarms.create(`scan:${session.id}`, { when: Date.now() + 30_000 });
           await injectPageScanner(session.id, session.tabId);
@@ -182,7 +183,7 @@ export class MessageRouter {
           throw new TypeError("完整嗅探需要 HTTP 与 HTTPS 全站可选权限。");
         }
         const settings = await getSettings();
-        const session = await createSession(tab, "live_monitor");
+        const session = await createSession(tab, "live_monitor", settings.scan);
         try {
           await injectPageScanner(session.id, session.tabId);
           await chrome.tabs.sendMessage(session.tabId, {

@@ -30,6 +30,8 @@ function parseCustomMap(value: string): Record<string, FileCategory> {
         "image",
         "subtitle",
         "data",
+        "code",
+        "font",
         "unknown"
       ].includes(category)
     )
@@ -197,6 +199,24 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
+            同路径查询变体上限
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={settings.scan.maxQueryVariantsPerPath}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: {
+                    ...settings.scan,
+                    maxQueryVariantsPerPath: Number(e.target.value)
+                  }
+                })
+              }
+            />
+          </label>
+          <label>
             并发数
             <input
               type="number"
@@ -241,6 +261,39 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
+            请求超时（秒）
+            <input
+              type="number"
+              min="1"
+              max="120"
+              value={settings.scan.requestTimeoutMs / 1000}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: {
+                    ...settings.scan,
+                    requestTimeoutMs: Number(e.target.value) * 1000
+                  }
+                })
+              }
+            />
+          </label>
+          <label>
+            最大重定向
+            <input
+              type="number"
+              min="0"
+              max="5"
+              value={settings.scan.maxRedirects}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: { ...settings.scan, maxRedirects: Number(e.target.value) }
+                })
+              }
+            />
+          </label>
+          <label>
             重试次数
             <input
               type="number"
@@ -269,6 +322,45 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               }
             />
             尊重 robots.txt
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.scan.discoverSitemaps}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: { ...settings.scan, discoverSitemaps: e.target.checked }
+                })
+              }
+            />
+            发现 Sitemap
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.scan.capturePageText}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: { ...settings.scan, capturePageText: e.target.checked }
+                })
+              }
+            />
+            提取网页文字
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.scan.followRedirects}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: { ...settings.scan, followRedirects: e.target.checked }
+                })
+              }
+            />
+            跟随重定向
           </label>
           <label>
             <input

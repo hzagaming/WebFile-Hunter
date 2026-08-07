@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   hasAllSitesPermission: vi.fn(),
   hasOriginPermission: vi.fn(),
   injectPageScanner: vi.fn(),
-  startCrawler: vi.fn()
+  startCrawler: vi.fn(),
+  getSettings: vi.fn()
 }));
 
 vi.mock("@/background/crawler-engine", () => ({
@@ -43,6 +44,7 @@ vi.mock("@/background/permission-manager", () => ({
   revokeAllSitesPermission: vi.fn(),
   revokeOrigin: vi.fn()
 }));
+vi.mock("@/database/settings", () => ({ getSettings: mocks.getSettings }));
 
 type RuntimeListener = (
   message: unknown,
@@ -62,6 +64,9 @@ beforeEach(() => {
   mocks.hasAllSitesPermission.mockResolvedValue(true);
   mocks.hasOriginPermission.mockResolvedValue(true);
   mocks.injectPageScanner.mockResolvedValue(undefined);
+  mocks.getSettings.mockResolvedValue({
+    scan: { ...scanSession().config, capturePageText: false }
+  });
   globalThis.chrome = {
     alarms: { create: createAlarm },
     runtime: {
@@ -97,6 +102,11 @@ describe("MessageRouter current page scan", () => {
     expect(name).toBe("scan:session-fixture");
     expect(alarmInfo.when).toBeGreaterThan(Date.now() + 25_000);
     expect(mocks.injectPageScanner).toHaveBeenCalledWith("session-fixture", 1);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.anything(),
+      "current_page",
+      expect.objectContaining({ capturePageText: false })
+    );
   });
 
   it("没有全站权限时拒绝启动完整实时嗅探", async () => {

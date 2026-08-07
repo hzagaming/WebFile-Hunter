@@ -6,7 +6,10 @@ import { DEFAULT_SETTINGS } from "@/utils/defaults";
 import type { AppSettings } from "@/types/models";
 import { appSnapshot } from "../helpers/fixtures";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  sendMessage:
+    vi.fn<(message: { type: string; payload?: { settings?: AppSettings } }) => Promise<unknown>>()
+}));
 
 vi.mock("@/messaging/message-client", () => ({ sendMessage: mocks.sendMessage }));
 
@@ -42,6 +45,37 @@ describe("SettingsPage", () => {
       })
     );
     expect(screen.getByRole("status")).toHaveTextContent("设置已保存");
+  });
+
+  it("保存查询变体、Sitemap、正文与重定向高级参数", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("同路径查询变体上限"), {
+      target: { value: "12" }
+    });
+    fireEvent.change(screen.getByLabelText("请求超时（秒）"), { target: { value: "45" } });
+    fireEvent.change(screen.getByLabelText("最大重定向"), { target: { value: "3" } });
+    await user.click(screen.getByRole("checkbox", { name: "发现 Sitemap" }));
+    await user.click(screen.getByRole("checkbox", { name: "提取网页文字" }));
+    await user.click(screen.getByRole("checkbox", { name: "跟随重定向" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "SAVE_SETTINGS" })
+      )
+    );
+    const saved = mocks.sendMessage.mock.calls.find(
+      ([message]) => message.type === "SAVE_SETTINGS"
+    )?.[0].payload?.settings;
+    expect(saved?.scan).toMatchObject({
+      maxQueryVariantsPerPath: 12,
+      requestTimeoutMs: 45_000,
+      maxRedirects: 3,
+      discoverSitemaps: false,
+      capturePageText: false,
+      followRedirects: false
+    });
   });
 
   it("保存失败时显示可访问错误且不会成为未处理拒绝", async () => {

@@ -13,6 +13,7 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".wav": "audio/wav",
+  ".woff2": "font/woff2",
   ".pdf": "application/pdf",
   ".zip": "application/zip"
 };

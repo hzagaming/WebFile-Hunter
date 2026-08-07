@@ -5,7 +5,7 @@ import { extractPageText } from "./page-text-extractor";
 
 interface ContentState {
   sessionId: string;
-  options: { includeStylesheets: boolean; includeImages: boolean };
+  options: { includeStylesheets: boolean; includeImages: boolean; includeText: boolean };
   monitor?: ContentMonitor;
 }
 
@@ -13,7 +13,11 @@ const STATE_KEY = "__webFileHunterContentState";
 const scope = globalThis as typeof globalThis & {
   __webFileHunterContentState?: ContentState;
   __webFileHunterInjectedSessionId?: string;
-  __webFileHunterInjectedOptions?: { includeStylesheets: boolean; includeImages: boolean };
+  __webFileHunterInjectedOptions?: {
+    includeStylesheets: boolean;
+    includeImages: boolean;
+    includeText: boolean;
+  };
 };
 
 async function sendResult(
@@ -26,7 +30,9 @@ async function sendResult(
       sessionId: state.sessionId,
       result: {
         ...scanDocument(state.options),
-        ...(type === "CONTENT_SCAN_RESULT" ? { text: extractPageText() } : {})
+        ...(type === "CONTENT_SCAN_RESULT" && state.options.includeText
+          ? { text: extractPageText() }
+          : {})
       }
     }
   };
@@ -45,7 +51,8 @@ if (typeof injectedSessionId === "string") {
     sessionId: injectedSessionId,
     options: scope.__webFileHunterInjectedOptions ?? {
       includeStylesheets: true,
-      includeImages: true
+      includeImages: true,
+      includeText: true
     }
   };
   state.sessionId = injectedSessionId;

@@ -17,20 +17,70 @@ describe("classifyFile", () => {
   });
 
   it.each([
-    ["styles.css", "text"],
-    ["app.js", "text"],
-    ["worker.mjs", "text"],
-    ["module.wasm", "data"],
-    ["font.woff", "data"],
-    ["font.woff2", "data"],
-    ["font.ttf", "data"],
-    ["font.otf", "data"]
+    ["styles.css", "code"],
+    ["app.js", "code"],
+    ["worker.mjs", "code"],
+    ["module.wasm", "code"],
+    ["font.woff", "font"],
+    ["font.woff2", "font"],
+    ["font.ttf", "font"],
+    ["font.otf", "font"]
   ])("识别网页静态资源 %s", (filename, category) => {
     expect(classifyFile({ url: `https://e.test/${filename}`, tagName: "script" })).toMatchObject({
       category,
       confidence: 90,
       isDownloadable: true
     });
+  });
+
+  it("依据请求语义区分 TypeScript 源码与 MPEG-TS 媒体", () => {
+    expect(
+      classifyFile({ url: "https://e.test/app.ts", tagName: "script", requestType: "script" })
+    ).toMatchObject({ category: "code", isDownloadable: true });
+    expect(
+      classifyFile({
+        url: "https://e.test/segment.ts",
+        tagName: "video",
+        requestType: "media"
+      })
+    ).toMatchObject({ category: "video", isDownloadable: false });
+  });
+
+  it.each([
+    ["app.js", "application/javascript", "code"],
+    ["theme.css", "text/css", "code"],
+    ["site.woff2", "font/woff2", "font"]
+  ])("严格区分源码与字体 %s", (filename, mimeType, category) => {
+    expect(classifyFile({ url: `https://e.test/${filename}`, mimeType })).toMatchObject({
+      category
+    });
+  });
+
+  it("通用文本 MIME 不覆盖更具体的字幕后缀", () => {
+    expect(
+      classifyFile({ url: "https://e.test/captions.srt", mimeType: "text/plain" })
+    ).toMatchObject({ category: "subtitle", extension: "srt" });
+  });
+
+  it("识别 HLS 与 DASH MIME 为不可直接下载的分段媒体", () => {
+    for (const mimeType of ["application/vnd.apple.mpegurl", "application/dash+xml"]) {
+      const result = classifyFile({ url: "https://e.test/manifest", mimeType });
+      expect(result).toMatchObject({
+        category: "video",
+        isDownloadable: false
+      });
+      expect(result.warnings).toContain("segmented_stream");
+    }
+  });
+
+  it("自定义 MIME 支持类型通配符", () => {
+    expect(
+      classifyFile({
+        url: "https://e.test/custom",
+        mimeType: "model/gltf-binary",
+        customMimeTypes: { "model/*": "archive" }
+      })
+    ).toMatchObject({ category: "archive", confidence: 95 });
   });
 
   it("通过 MIME 和 Content-Disposition 识别无后缀接口", () => {
@@ -87,5 +137,14 @@ describe("classifyFile", () => {
     expect(
       classifyFile({ url: "https://e.test/manual.pdf", mimeType: "application/octet-stream" })
     ).toMatchObject({ category: "document", extension: "pdf" });
+  });
+
+  it.each([
+    ["book.epub", "ebook"],
+    ["report.docx", "document"]
+  ])("通用 ZIP 容器 MIME 保留 %s 的具体分类", (filename, category) => {
+    expect(
+      classifyFile({ url: `https://e.test/${filename}`, mimeType: "application/zip" })
+    ).toMatchObject({ category, extension: filename.split(".").at(-1) });
   });
 });

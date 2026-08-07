@@ -9,10 +9,10 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 - 当前页面扫描：DOM 属性、`download`、`srcset`、Open Graph、JSON-LD、itemprop、enclosure、object param、template、开放 Shadow DOM、内联/可访问样式表、Performance Resource Timing、可注入 iframe 与同源继承 Frame。
 - 网页文字提取：独立侧栏按当前页、权限允许的 frame 与递归页面保存公开可见正文，支持搜索、复制和 TXT 导出；排除隐藏内容与用户输入。
 - 完整实时嗅探：用户明确授权后，仅观察当前标签页的同站与第三方 CDN、媒体、接口及 frame 请求，合并 `requestId` 对应的请求与响应头，并在同源导航后按剩余时长继续监听。
-- 同源递归扫描：直接 GET 静态 HTML，结合页面链接、HTTP Link/Refresh、robots.txt 声明或标准根路径的 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度/页面/并发/速率硬限制、超时、重试、暂停、恢复和取消。
-- 文件识别：扩展名、MIME、Content-Disposition、标签上下文、查询参数、请求类型和响应大小综合评分。
+- 同源递归扫描：直接 GET 静态 HTML，结合页面链接、HTTP Link/Refresh、可选 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度、页面、同路径查询变体、并发、速率、超时和重定向硬限制，以及暂停、恢复和取消。
+- 文件识别：扩展名、MIME、Content-Disposition、标签上下文、查询参数、请求类型和响应大小综合评分；严格区分源码、字体、字幕、数据、文档、电子书、分段媒体等分类。
 - 元数据探测：仅资源头信息优先 HEAD，服务器不支持 HEAD 时使用 `Range: bytes=0-0`，不完整下载大文件；HTML 页面抓取不依赖 HEAD，并按响应头、BOM 或 meta 声明解码字符集。
-- 结果管理：分类、扩展名、MIME、大小、来源、置信度、内外部、关键字和正则筛选；虚拟列表支持大量结果。
+- 结果管理：图片缩略图、音频手动试听、资源详情、独立打开/下载/复制操作，以及分类、扩展名、MIME、大小、来源、置信度、内外部、关键字和正则筛选；虚拟列表支持大量结果。
 - 本地导出：TXT、CSV（可带 UTF-8 BOM）、JSON。
 - 下载队列：用户手动开始、并发限制、取消、重试、打开文件、在文件夹中显示。
 - 本地历史与恢复：支持打开、单次导出、删除和清空扫描历史；清空时保留设置与下载记录。IndexedDB 检查点可供递归任务手动恢复。
@@ -66,7 +66,7 @@ npm run test:e2e
 npm run package
 ```
 
-`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、srcdoc Frame、JSON-LD/显式 MIME/object param、跨域资源嗅探、HTTP Link/Refresh、Sitemap Index/raw gzip/SPA 递归、网页文字隐私过滤、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
+`npm run test:e2e` 会使用一次性浏览器配置启动本机 Microsoft Edge，加载临时扩展副本和本地演示站。临时副本预授予测试所需权限，用于验证当前页、srcdoc Frame、JSON-LD/显式 MIME/object param、源码/字体分类、跨域资源嗅探、HTTP Link/Refresh、Sitemap Index/raw gzip/SPA 递归、网页文字隐私过滤、媒体预览、文件详情、设置、导出和下载链路；生产 `dist/manifest.json` 仍只声明可选主机权限。测试结束后删除临时浏览器配置。
 
 脚本会自动探测 macOS、Windows 和 Linux 的常见 Edge 安装路径；非标准安装可设置 `EDGE_PATH`。
 
@@ -109,7 +109,7 @@ npm run build
 
 ### 同源递归扫描
 
-先显示配置，再请求当前站点权限。后台使用 GET 读取静态 HTML，并从页面链接、HTTP Link/Refresh、robots.txt 的 Sitemap/Sitemap Index（支持 raw gzip）和启动时当前标签页已渲染的 SPA DOM 补充队列；robots 未声明时只尝试同源标准根 Sitemap 入口。资源元数据探测才会使用 HEAD。爬虫只访问完全相同的 origin，子域名视为外域；外域文件链接可以记录，但不会继续扩散，只有用户授予完整嗅探权限时才可探测其元数据。robots.txt 的 401/403 或重试后仍失败会安全停止任务。
+先显示配置，再请求当前站点权限。后台使用 GET 读取静态 HTML，并从页面链接、HTTP Link/Refresh、可选 Sitemap/Sitemap Index（支持 raw gzip）和启动时当前标签页已渲染的 SPA DOM 补充队列；同一路径的查询参数变体受到独立上限约束。资源元数据探测才会使用 HEAD。爬虫只访问完全相同的 origin，子域名视为外域；外域文件链接可以记录，但不会继续扩散，只有用户授予完整嗅探权限时才可探测其元数据。启用 robots 时，robots.txt 的 401/403 或重试后仍失败会安全停止任务。
 
 ## 权限说明
 
@@ -142,7 +142,7 @@ npm run build
 
 ## 演示站
 
-`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、srcdoc Frame、object param、无后缀下载接口、HTTP Link/Refresh、CSS `@import`/`image-set`/构造样式表、重定向、慢响应、429、403、robots.txt、Sitemap Index/raw gzip/根路径回退和 SPA 动态路由。文件均为极小占位内容，不包含版权媒体。
+`tests/fixtures/site/` 包含 TXT、MP3 响应头、PDF、ZIP、字体、srcdoc Frame、object param、无后缀下载接口、HTTP Link/Refresh、CSS `@import`/`image-set`/构造样式表、重定向、慢响应、429、403、robots.txt、Sitemap Index/raw gzip/根路径回退和 SPA 动态路由。文件均为极小占位内容，不包含版权媒体。
 
 ## 发布打包
 
@@ -156,7 +156,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.6.0.zip
+release/webfile-hunter-v1.7.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。

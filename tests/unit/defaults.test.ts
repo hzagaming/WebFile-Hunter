@@ -10,7 +10,8 @@ describe("clampScanConfig", () => {
         maxConcurrency: 99,
         minDelayMs: 1,
         maxHtmlBytes: 99_999_999,
-        retries: 99
+        retries: 99,
+        maxQueryVariantsPerPath: 999
       })
     ).toMatchObject({
       maxDepth: 5,
@@ -18,7 +19,8 @@ describe("clampScanConfig", () => {
       maxConcurrency: 6,
       minDelayMs: 500,
       maxHtmlBytes: 5 * 1024 * 1024,
-      retries: 3
+      retries: 3,
+      maxQueryVariantsPerPath: 50
     });
   });
 

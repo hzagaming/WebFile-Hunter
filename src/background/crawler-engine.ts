@@ -162,15 +162,14 @@ async function seedSitemaps(
   queue: CrawlerQueue,
   robots: RobotsRules
 ): Promise<void> {
+  if (!session.config.discoverSitemaps) return;
   const pending = robots.sitemaps.length
     ? [...robots.sitemaps]
-    : session.config.respectRobots
-      ? [
-          `${session.origin}/sitemap.xml`,
-          `${session.origin}/sitemap_index.xml`,
-          `${session.origin}/sitemap.xml.gz`
-        ]
-      : [];
+    : [
+        `${session.origin}/sitemap.xml`,
+        `${session.origin}/sitemap_index.xml`,
+        `${session.origin}/sitemap.xml.gz`
+      ];
   const visited = new Set<string>();
   while (pending.length && visited.size < MAX_SITEMAP_FILES && !active.controller.signal.aborted) {
     const raw = pending.shift();
@@ -252,6 +251,7 @@ async function recordCandidates(
   const candidates = [];
   for (const resource of resources) {
     if (resource.resourceHint === "image" && !settings.scanImages) continue;
+    if (resource.source === "CSS_URL" && !settings.scanStylesheets) continue;
     let metadata;
     if (session.config.probeMetadata && !resource.isExternal) {
       try {
@@ -363,7 +363,7 @@ async function processPage(
     [...extracted.resources, ...headerLinks.resources].map((resource) => [resource.url, resource])
   );
   await recordCandidates(session, finalUrl, extracted.title, [...resources.values()], active);
-  if (extracted.text?.content) {
+  if (session.config.capturePageText && extracted.text?.content) {
     const document = await putPageText(session.id, {
       pageUrl: finalUrl,
       title: extracted.title,
@@ -426,7 +426,14 @@ async function run(
   };
   activeCrawls.set(session.id, active);
   const queue =
-    restored?.queue ?? new CrawlerQueue(session.config.maxDepth, session.config.maxPages);
+    restored?.queue ??
+    new CrawlerQueue(
+      session.config.maxDepth,
+      session.config.maxPages,
+      [],
+      undefined,
+      session.config.maxQueryVariantsPerPath
+    );
   const visited = restored?.visited ?? new Set<string>();
   active.queue = queue;
   active.visited = visited;
@@ -563,7 +570,8 @@ export async function resumeCrawler(sessionId: string): Promise<void> {
       session.config.maxDepth,
       session.config.maxPages,
       checkpoint.queue.sort((a, b) => a.order - b.order),
-      [...checkpoint.visitedUrls, ...checkpoint.queue.map((item) => item.url)]
+      [...checkpoint.visitedUrls, ...checkpoint.queue.map((item) => item.url)],
+      session.config.maxQueryVariantsPerPath
     );
     const updated = await patchSession(sessionId, { status: "running" });
     void run(updated, { queue, visited: new Set(checkpoint.visitedUrls) });

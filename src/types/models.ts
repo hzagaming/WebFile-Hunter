@@ -8,6 +8,8 @@ export type FileCategory =
   | "image"
   | "subtitle"
   | "data"
+  | "code"
+  | "font"
   | "unknown";
 
 export type DiscoverySource =
@@ -59,10 +61,13 @@ export interface ScanConfig {
   respectRobots: boolean;
   maxDepth: number;
   maxPages: number;
+  maxQueryVariantsPerPath: number;
   maxConcurrency: number;
   minDelayMs: number;
   requestTimeoutMs: number;
   maxHtmlBytes: number;
+  discoverSitemaps: boolean;
+  capturePageText: boolean;
   probeMetadata: boolean;
   followRedirects: boolean;
   maxRedirects: number;

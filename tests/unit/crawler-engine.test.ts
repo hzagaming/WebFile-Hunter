@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResourceMetadata, SafeFetchOptions } from "@/background/metadata-probe";
 import type { ExtensionEvent } from "@/messaging/message-types";
 import type { FileCandidate } from "@/types/models";
+import { DEFAULT_SETTINGS } from "@/utils/defaults";
 import { scanSession } from "../helpers/fixtures";
 
 const mocks = vi.hoisted(() => ({
@@ -36,7 +37,7 @@ vi.mock("@/database/db", () => ({
   putPageText: mocks.putPageText
 }));
 vi.mock("@/database/settings", () => ({
-  getSettings: vi.fn().mockResolvedValue({ customExtensions: {}, customMimeTypes: {} })
+  getSettings: vi.fn().mockResolvedValue(structuredClone(DEFAULT_SETTINGS))
 }));
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
 vi.mock("@/background/checkpoint-manager", () => ({
@@ -75,7 +76,7 @@ const recursive = scanSession({
   id: "session-recursive",
   mode: "recursive_crawl",
   status: "paused",
-  config: { ...scanSession().config, respectRobots: false }
+  config: { ...scanSession().config, respectRobots: false, discoverSitemaps: false }
 });
 delete recursive.completedAt;
 const checkpoint = {
@@ -338,7 +339,12 @@ describe("crawler engine lifecycle", () => {
       ...recursive,
       status: "running",
       startUrl,
-      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+      config: {
+        ...recursive.config,
+        respectRobots: true,
+        discoverSitemaps: true,
+        minDelayMs: 0
+      }
     });
 
     await vi.waitFor(() =>
@@ -392,7 +398,12 @@ describe("crawler engine lifecycle", () => {
       ...recursive,
       status: "running",
       startUrl: "https://example.test/start",
-      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+      config: {
+        ...recursive.config,
+        respectRobots: true,
+        discoverSitemaps: true,
+        minDelayMs: 0
+      }
     });
 
     await vi.waitFor(() =>
@@ -437,7 +448,12 @@ describe("crawler engine lifecycle", () => {
       ...recursive,
       status: "running",
       startUrl: "https://example.test/start",
-      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+      config: {
+        ...recursive.config,
+        respectRobots: true,
+        discoverSitemaps: true,
+        minDelayMs: 0
+      }
     });
 
     await vi.waitFor(() =>
@@ -473,7 +489,12 @@ describe("crawler engine lifecycle", () => {
       ...recursive,
       status: "running",
       startUrl: "https://example.test/start",
-      config: { ...recursive.config, respectRobots: true, minDelayMs: 0 }
+      config: {
+        ...recursive.config,
+        respectRobots: true,
+        discoverSitemaps: true,
+        minDelayMs: 0
+      }
     });
 
     await vi.waitFor(() =>

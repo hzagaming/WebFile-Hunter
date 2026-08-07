@@ -38,6 +38,8 @@ const categoryLabels: Record<CategoryFilter, string> = {
   image: "图片",
   subtitle: "字幕",
   data: "数据",
+  code: "源码",
+  font: "字体",
   unknown: "未知"
 };
 
@@ -120,6 +122,12 @@ function searchableValues(file: FileCandidate): string[] {
 
 function normalizeSearch(value: string): string {
   return value.normalize("NFKC").trim().toLowerCase();
+}
+
+function markdownLink(file: FileCandidate): string {
+  const name = file.filename.replace(/([\\[\]])/g, "\\$1");
+  const url = resourceUrl(file).replace(/([()])/g, "\\$1");
+  return `[${name}](${url})`;
 }
 
 interface ImageThumbnailProps {
@@ -284,6 +292,12 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [preview, setPreview] = useState<{ file: FileCandidate; kind: PreviewKind }>();
   const [previewError, setPreviewError] = useState<string>();
+  const [detailsFile, setDetailsFile] = useState<FileCandidate>();
+  const [detailsFeedback, setDetailsFeedback] = useState<{
+    kind: FeedbackKind;
+    text: string;
+  }>();
+  const pageRef = useRef<HTMLElement>(null);
   const previewTrigger = useRef<HTMLElement | null>(null);
   const [activeAudioId, setActiveAudioId] = useState<string>();
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
@@ -295,6 +309,18 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     window.addEventListener("resize", updateViewportHeight);
     return () => window.removeEventListener("resize", updateViewportHeight);
   }, []);
+
+  useEffect(() => {
+    if (!detailsFile && !preview) return;
+    const background = [...(pageRef.current?.children ?? [])].filter(
+      (element): element is HTMLElement =>
+        element instanceof HTMLElement && !element.classList.contains("media-preview-backdrop")
+    );
+    for (const element of background) element.setAttribute("inert", "");
+    return () => {
+      for (const element of background) element.removeAttribute("inert");
+    };
+  }, [detailsFile, preview]);
 
   const { filtered, regexError } = useMemo(() => {
     let matcher: RegExp | undefined;
@@ -490,6 +516,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     previewTrigger.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPreviewError(undefined);
+    setDetailsFile(undefined);
     setPreview({ file, kind });
   };
 
@@ -507,6 +534,68 @@ export function ResultsPage({ snapshot, refresh }: Props) {
     }
     if (event.key !== "Tab") return;
     const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button, audio")].filter(
+      (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0
+    );
+    if (!controls.length) return;
+    const first = controls[0]!;
+    const last = controls.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const openDetails = (file: FileCandidate): void => {
+    setActiveAudioId(undefined);
+    previewTrigger.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPreview(undefined);
+    setDetailsFeedback(undefined);
+    setDetailsFile(file);
+  };
+
+  const closeDetails = (): void => {
+    setDetailsFile(undefined);
+    setDetailsFeedback(undefined);
+    queueMicrotask(() => previewTrigger.current?.focus());
+  };
+
+  const copyDetail = async (value: string, label: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setDetailsFeedback({ kind: "success", text: `${label}已复制。` });
+    } catch (error) {
+      setDetailsFeedback({
+        kind: "error",
+        text: error instanceof Error ? error.message : `无法复制${label}。`
+      });
+    }
+  };
+
+  const openDetailTab = async (url: string, label: string): Promise<void> => {
+    setDetailsFeedback(undefined);
+    try {
+      await chrome.tabs.create({ url });
+      setDetailsFeedback({ kind: "success", text: `${label}已在新标签页打开。` });
+    } catch (error) {
+      setDetailsFeedback({
+        kind: "error",
+        text: error instanceof Error ? error.message : `无法打开${label}。`
+      });
+    }
+  };
+
+  const handleDetailsKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDetails();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button")].filter(
       (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0
     );
     if (!controls.length) return;
@@ -603,7 +692,13 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   };
 
   return (
-    <section className="page results-page" role="region" aria-label="发现结果" aria-busy={busy}>
+    <section
+      ref={pageRef}
+      className="page results-page"
+      role="region"
+      aria-label="发现结果"
+      aria-busy={busy}
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">本地结果库</p>
@@ -759,7 +854,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       {filtered.length ? (
         <VirtualList
           items={filtered}
-          itemHeight={221}
+          itemHeight={249}
           height={Math.max(320, viewportHeight - 390)}
           endPadding={72}
           getKey={(file) => file.id}
@@ -902,6 +997,9 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     >
                       元数据
                     </button>
+                    <button type="button" disabled={busy} onClick={() => openDetails(file)}>
+                      详情
+                    </button>
                   </div>
                 </div>
               </article>
@@ -970,6 +1068,109 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           </button>
         </div>
       </div>
+      {detailsFile ? (
+        <div
+          className="media-preview-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDetails();
+          }}
+        >
+          <div
+            className="media-preview file-details-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="file-details-title"
+            onKeyDown={handleDetailsKeyDown}
+          >
+            <div className="media-preview-heading">
+              <div>
+                <p className="eyebrow">完整资源信息</p>
+                <h2 id="file-details-title">文件详情：{detailsFile.filename}</h2>
+              </div>
+              <button type="button" autoFocus aria-label="关闭文件详情" onClick={closeDetails}>
+                关闭
+              </button>
+            </div>
+            <dl className="file-details-grid">
+              <div>
+                <dt>分类</dt>
+                <dd>{categoryLabels[detailsFile.category]}</dd>
+              </div>
+              <div>
+                <dt>置信度</dt>
+                <dd>{detailsFile.confidence}</dd>
+              </div>
+              <div>
+                <dt>扩展名</dt>
+                <dd>{detailsFile.extension ?? "未知"}</dd>
+              </div>
+              <div>
+                <dt>大小</dt>
+                <dd>{formatSize(detailsFile.contentLength)}</dd>
+              </div>
+              <div className="wide">
+                <dt>MIME</dt>
+                <dd>{detailsFile.mimeType ?? "未知"}</dd>
+              </div>
+              <div className="wide">
+                <dt>资源 URL</dt>
+                <dd>{resourceUrl(detailsFile)}</dd>
+              </div>
+              <div className="wide">
+                <dt>来源页</dt>
+                <dd>{detailsFile.sourcePageUrl}</dd>
+              </div>
+              <div className="wide">
+                <dt>发现方式</dt>
+                <dd>{detailsFile.sources.map((item) => sourceLabels[item]).join(" + ")}</dd>
+              </div>
+              <div className="wide">
+                <dt>风险提示</dt>
+                <dd>
+                  {detailsFile.warnings.length
+                    ? detailsFile.warnings
+                        .map((warning) => warningLabels[warning] ?? warning)
+                        .join("；")
+                    : "未发现已知风险"}
+                </dd>
+              </div>
+            </dl>
+            {detailsFeedback ? (
+              <FeedbackNotice kind={detailsFeedback.kind}>{detailsFeedback.text}</FeedbackNotice>
+            ) : null}
+            <div className="file-details-actions">
+              <button type="button" onClick={() => void copyDetail(detailsFile.filename, "文件名")}>
+                复制文件名
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyDetail(markdownLink(detailsFile), "Markdown")}
+              >
+                复制 Markdown
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyDetail(JSON.stringify(detailsFile, null, 2), "元数据 JSON")}
+              >
+                复制元数据 JSON
+              </button>
+              <button
+                type="button"
+                disabled={!canOpenResource(detailsFile)}
+                onClick={() => void openDetailTab(resourceUrl(detailsFile), "资源")}
+              >
+                打开资源
+              </button>
+              <button
+                type="button"
+                onClick={() => void openDetailTab(detailsFile.sourcePageUrl, "来源页")}
+              >
+                打开来源页
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {preview ? (
         <div
           className="media-preview-backdrop"

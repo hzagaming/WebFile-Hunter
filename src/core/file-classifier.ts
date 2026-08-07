@@ -1,6 +1,11 @@
 import { parseContentDispositionFilename } from "./content-disposition";
 import { EXTENSION_CATEGORY, getExtension, STREAM_EXTENSIONS } from "./extension-map";
-import { categoryFromMime, normalizeMimeType } from "./mime-map";
+import {
+  categoryFromMime,
+  isGenericMime,
+  isSegmentedStreamMime,
+  normalizeMimeType
+} from "./mime-map";
 import { sanitizeFilename } from "./filename-sanitizer";
 import type { FileCategory } from "@/types/models";
 
@@ -43,6 +48,14 @@ function filenameFromUrl(raw: string): { filename: string; queryFilename: boolea
   }
 }
 
+function customMimeCategory(
+  mime: string | undefined,
+  custom: Record<string, FileCategory> | undefined
+): FileCategory | undefined {
+  if (!mime || !custom) return undefined;
+  return custom[mime] ?? custom[`${mime.split("/", 1)[0]}/*`];
+}
+
 export function classifyFile(input: ClassificationInput): ClassificationResult {
   if (input.url.startsWith("blob:")) {
     return {
@@ -58,19 +71,30 @@ export function classifyFile(input: ClassificationInput): ClassificationResult {
   const fromUrl = filenameFromUrl(input.url);
   const filename = sanitizeFilename(dispositionName ?? fromUrl.filename);
   const extension = getExtension(filename);
-  const extensionCategory = extension
+  let extensionCategory = extension
     ? (input.customExtensions?.[extension] ?? EXTENSION_CATEGORY.get(extension))
     : undefined;
+  const mediaContext =
+    input.requestType === "media" || ["audio", "video", "source"].includes(input.tagName ?? "");
+  if (extension === "ts") extensionCategory = mediaContext ? "video" : "code";
   const mime = normalizeMimeType(input.mimeType);
-  const resolvedMimeCategory = mime
-    ? (input.customMimeTypes?.[mime] ?? categoryFromMime(mime))
-    : undefined;
+  const customMime = customMimeCategory(mime, input.customMimeTypes);
+  const resolvedMimeCategory = customMime ?? categoryFromMime(mime);
+  const isGenericContainer =
+    mime === "application/zip" &&
+    extensionCategory !== undefined &&
+    extensionCategory !== "archive";
   const mimeCategory =
-    resolvedMimeCategory === "unknown" && extensionCategory ? undefined : resolvedMimeCategory;
+    extensionCategory &&
+    !customMime &&
+    (resolvedMimeCategory === "unknown" || isGenericMime(mime) || isGenericContainer)
+      ? undefined
+      : resolvedMimeCategory;
   const warnings: string[] = [];
 
   if (extension && STREAM_EXTENSIONS.has(extension)) warnings.push("segmented_stream");
-  if (extension === "ts" && input.requestType === "media") warnings.push("segmented_stream");
+  if (extension === "ts" && mediaContext) warnings.push("segmented_stream");
+  if (isSegmentedStreamMime(mime)) warnings.push("segmented_stream");
   if (mimeCategory && extensionCategory && mimeCategory !== extensionCategory) {
     warnings.push("mime_extension_conflict");
   }

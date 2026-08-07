@@ -4,10 +4,13 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
   respectRobots: true,
   maxDepth: 2,
   maxPages: 200,
+  maxQueryVariantsPerPath: 5,
   maxConcurrency: 2,
   minDelayMs: 800,
   requestTimeoutMs: 15_000,
   maxHtmlBytes: 2 * 1024 * 1024,
+  discoverSitemaps: true,
+  capturePageText: true,
   probeMetadata: true,
   followRedirects: true,
   maxRedirects: 5,
@@ -47,6 +50,12 @@ export function clampScanConfig(input: Partial<ScanConfig>): ScanConfig {
         : DEFAULT_SCAN_CONFIG.respectRobots,
     maxDepth: boundedInteger(input.maxDepth, DEFAULT_SCAN_CONFIG.maxDepth, 0, 5),
     maxPages: boundedInteger(input.maxPages, DEFAULT_SCAN_CONFIG.maxPages, 1, 2000),
+    maxQueryVariantsPerPath: boundedInteger(
+      input.maxQueryVariantsPerPath,
+      DEFAULT_SCAN_CONFIG.maxQueryVariantsPerPath,
+      1,
+      50
+    ),
     maxConcurrency: boundedInteger(input.maxConcurrency, DEFAULT_SCAN_CONFIG.maxConcurrency, 1, 6),
     minDelayMs: boundedInteger(input.minDelayMs, DEFAULT_SCAN_CONFIG.minDelayMs, 500, 60_000),
     requestTimeoutMs: boundedInteger(
@@ -61,6 +70,14 @@ export function clampScanConfig(input: Partial<ScanConfig>): ScanConfig {
       1024,
       5 * 1024 * 1024
     ),
+    discoverSitemaps:
+      typeof input.discoverSitemaps === "boolean"
+        ? input.discoverSitemaps
+        : DEFAULT_SCAN_CONFIG.discoverSitemaps,
+    capturePageText:
+      typeof input.capturePageText === "boolean"
+        ? input.capturePageText
+        : DEFAULT_SCAN_CONFIG.capturePageText,
     probeMetadata:
       typeof input.probeMetadata === "boolean"
         ? input.probeMetadata

@@ -633,7 +633,7 @@ h3 {
   display: grid;
   grid-template-columns: 34px 1fr;
   gap: 10px;
-  height: 212px;
+  height: 240px;
   margin: 0 4px 9px;
   padding: 12px 10px 10px 38px;
   border: 1px solid var(--line);
@@ -760,6 +760,12 @@ h3 {
 }
 .type-subtitle {
   background: #637185;
+}
+.type-code {
+  background: #4358a8;
+}
+.type-font {
+  background: #a15b31;
 }
 .result-body {
   min-width: 0;
@@ -921,6 +927,45 @@ h3 {
 .media-preview-tip {
   margin: 9px 0 0;
   color: var(--muted);
+  font-size: 10px;
+}
+.file-details-dialog {
+  width: min(100%, 620px);
+}
+.file-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+.file-details-grid > div {
+  min-width: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f1f6f8;
+}
+.file-details-grid .wide {
+  grid-column: 1 / -1;
+}
+.file-details-grid dt {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.file-details-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.file-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.file-details-actions button {
+  min-height: 30px;
+  padding: 5px 8px;
   font-size: 10px;
 }
 

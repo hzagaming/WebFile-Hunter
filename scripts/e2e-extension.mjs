@@ -471,6 +471,14 @@ try {
         (file) =>
           file.sessionId === currentSession.id &&
           file.canonicalUrl === `${server.origin}/theme.css` &&
+          file.category === "code" &&
+          file.sources.includes("CSS_URL")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === currentSession.id &&
+          file.canonicalUrl === `${server.origin}/files/test-font.woff2` &&
+          file.category === "font" &&
           file.sources.includes("CSS_URL")
       ) &&
       rows.files.some(
@@ -512,6 +520,15 @@ try {
   );
   const currentFiles = currentRows.files.filter((file) => file.sessionId === currentSession.id);
   if (currentFiles.length < 2) throw new Error("当前页面扫描结果不足。");
+  const discoveredCodeFile = currentFiles.find(
+    (file) => file.canonicalUrl === `${server.origin}/theme.css`
+  );
+  const discoveredFontFile = currentFiles.find(
+    (file) => file.canonicalUrl === `${server.origin}/files/test-font.woff2`
+  );
+  if (!discoveredCodeFile || !discoveredFontFile) {
+    throw new Error("源码或字体分类夹具未被当前页扫描发现。");
+  }
   await eventually(
     () => databaseRows(worker),
     (rows) =>
@@ -835,6 +852,30 @@ try {
     updatedAt: Date.now() + 3
   };
   await putDatabaseFile(worker, previewAudioFile);
+  const codeFile = {
+    ...discoveredCodeFile,
+    id: "file-e2e-code",
+    sessionId: liveSession.id,
+    originalUrl: `${discoveredCodeFile.originalUrl}?e2e-category=code`,
+    canonicalUrl: `${discoveredCodeFile.canonicalUrl}?e2e-category=code`,
+    finalUrl: `${discoveredCodeFile.canonicalUrl}?e2e-category=code`,
+    filename: "classified-code.css",
+    discoveredAt: Date.now() + 4,
+    updatedAt: Date.now() + 4
+  };
+  const fontFile = {
+    ...discoveredFontFile,
+    id: "file-e2e-font",
+    sessionId: liveSession.id,
+    originalUrl: `${discoveredFontFile.originalUrl}?e2e-category=font`,
+    canonicalUrl: `${discoveredFontFile.canonicalUrl}?e2e-category=font`,
+    finalUrl: `${discoveredFontFile.canonicalUrl}?e2e-category=font`,
+    filename: "classified-font.woff2",
+    discoveredAt: Date.now() + 5,
+    updatedAt: Date.now() + 5
+  };
+  await putDatabaseFile(worker, codeFile);
+  await putDatabaseFile(worker, fontFile);
 
   const extremeFilename = `${"超长文件名-".repeat(12)}fixture.extremelylongextension`;
   await putDatabaseFile(worker, {
@@ -875,6 +916,12 @@ try {
     ) ||
     !rowsWithExtreme.files.some(
       (file) => file.id === previewAudioFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === codeFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === fontFile.id && file.sessionId === liveSession.id
     )
   ) {
     throw new Error("结果页 E2E 夹具未写入实时监听会话。");
@@ -1012,8 +1059,22 @@ try {
     path: resolve("test-results/edge-results-380.png"),
     fullPage: true
   });
-  await assertResultCardControls(sidepanelPage, extremeFilename, 6);
+  await assertResultCardControls(sidepanelPage, extremeFilename, 7);
   await assertLastResultUnobscured(sidepanelPage);
+
+  await sidepanelPage.getByRole("button", { name: "源码", exact: true }).click();
+  const codeCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(codeFile.filename, { exact: true })
+  });
+  await codeCard.locator(".file-type.type-code").waitFor();
+  await assertResultCardControls(sidepanelPage, codeFile.filename, 6);
+  await sidepanelPage.getByRole("button", { name: "字体", exact: true }).click();
+  const fontCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(fontFile.filename, { exact: true })
+  });
+  await fontCard.locator(".file-type.type-font").waitFor();
+  await assertResultCardControls(sidepanelPage, fontFile.filename, 6);
+  await sidepanelPage.getByRole("button", { name: "全部", exact: true }).click();
 
   const resultSearch = sidepanelPage.getByRole("searchbox", { name: "搜索结果" });
   await resultSearch.fill("  ＰＮＧ   preview  ");
@@ -1033,7 +1094,7 @@ try {
       })),
     (image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
   );
-  await assertResultCardControls(sidepanelPage, previewImageFile.filename, 6);
+  await assertResultCardControls(sidepanelPage, previewImageFile.filename, 7);
   await sidepanelPage.screenshot({
     path: resolve("test-results/edge-image-card-380.png"),
     fullPage: true
@@ -1064,6 +1125,45 @@ try {
   await imageDialog.waitFor({ state: "detached" });
   if (!(await imageThumbnailButton.evaluate((button) => button === document.activeElement))) {
     throw new Error("关闭图片预览后焦点未返回缩略图按钮。");
+  }
+
+  const detailsTrigger = imageCard.getByRole("button", { name: "详情", exact: true });
+  await detailsTrigger.click();
+  const detailsDialog = sidepanelPage.getByRole("dialog", {
+    name: `文件详情：${previewImageFile.filename}`
+  });
+  await detailsDialog.waitFor();
+  if (
+    !(await sidepanelPage
+      .locator(".section-heading")
+      .evaluate((element) => element.hasAttribute("inert")))
+  ) {
+    throw new Error("文件详情打开时背景未进入 inert 状态。");
+  }
+  await detailsDialog.getByText(previewImageFile.canonicalUrl, { exact: true }).waitFor();
+  for (const name of ["复制文件名", "复制 Markdown", "复制元数据 JSON", "打开资源", "打开来源页"]) {
+    await detailsDialog.getByRole("button", { name, exact: true }).waitFor();
+  }
+  await assertResponsive(sidepanelPage, "文件详情");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-details-380.png"),
+    fullPage: true
+  });
+  await sidepanelPage.keyboard.press("Shift+Tab");
+  if (
+    !(await detailsDialog
+      .getByRole("button", { name: "打开来源页", exact: true })
+      .evaluate((button) => button === document.activeElement))
+  ) {
+    throw new Error("文件详情焦点闭环未从首项回到末项。");
+  }
+  await sidepanelPage.keyboard.press("Tab");
+  await detailsDialog.getByRole("button", { name: "复制文件名", exact: true }).click();
+  await detailsDialog.getByText("文件名已复制。", { exact: true }).waitFor();
+  await sidepanelPage.keyboard.press("Escape");
+  await detailsDialog.waitFor({ state: "detached" });
+  if (!(await detailsTrigger.evaluate((button) => button === document.activeElement))) {
+    throw new Error("关闭文件详情后焦点未返回详情按钮。");
   }
 
   await resultSearch.fill(previewAudioFile.filename);
@@ -1269,6 +1369,25 @@ try {
   await sidepanelPage.getByRole("heading", { name: "设置", exact: true }).waitFor();
   await assertResponsive(sidepanelPage, "设置页");
   await assertActiveNavigation(sidepanelPage, "设置");
+  await sidepanelPage.getByLabel("同路径查询变体上限").fill("9");
+  await sidepanelPage.getByLabel("请求超时（秒）").fill("30");
+  await sidepanelPage.getByLabel("最大重定向").fill("2");
+  await sidepanelPage.getByRole("checkbox", { name: "发现 Sitemap", exact: true }).uncheck();
+  await sidepanelPage.getByRole("checkbox", { name: "提取网页文字", exact: true }).uncheck();
+  await sidepanelPage.getByRole("checkbox", { name: "跟随重定向", exact: true }).uncheck();
+  await sidepanelPage.getByRole("button", { name: "保存", exact: true }).click();
+  await sidepanelPage.getByText("设置已保存到本地浏览器。", { exact: true }).waitFor();
+  const advancedSettings = await send(permissionPage, { type: "GET_SETTINGS" });
+  if (
+    advancedSettings.scan.maxQueryVariantsPerPath !== 9 ||
+    advancedSettings.scan.requestTimeoutMs !== 30_000 ||
+    advancedSettings.scan.maxRedirects !== 2 ||
+    advancedSettings.scan.discoverSitemaps ||
+    advancedSettings.scan.capturePageText ||
+    advancedSettings.scan.followRedirects
+  ) {
+    throw new Error(`高级扫描设置未正确保存：${JSON.stringify(advancedSettings.scan)}`);
+  }
   await sidepanelPage.screenshot({
     path: resolve("test-results/edge-settings-380.png"),
     fullPage: true
@@ -1316,9 +1435,11 @@ try {
   console.log("活动标签页切换与导航上下文同步通过");
   console.log("TXT/CSV/JSON 结果导出与历史导出真实落盘通过");
   console.log("结果卡图片缩略图、音频播放暂停与时长显示通过");
+  console.log("源码/字体分类、文件详情操作与焦点闭环通过");
   console.log("搜索归一化、多关键词完整匹配通过");
   console.log("媒体浮层实际加载且默认不自动播放通过");
   console.log("资源新标签页打开通过");
+  console.log("高级扫描设置保存与回读通过");
   console.log(`单项下载隔离与真实落盘通过：${requestedFileDownload.filename}`);
   console.log("可能资源独立入口与 blob 安全提示通过");
   console.log("六页窄侧栏、可访问控件与历史清空隔离通过");
