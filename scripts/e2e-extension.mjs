@@ -30,7 +30,11 @@ const browserErrors = [];
 function watchPage(page, label) {
   page.on("pageerror", (error) => browserErrors.push(`${label} pageerror: ${error.message}`));
   page.on("console", (message) => {
-    if (message.type() === "error") browserErrors.push(`${label} console: ${message.text()}`);
+    if (message.type() !== "error") return;
+    const location = message.location();
+    browserErrors.push(
+      `${label} console: ${message.text()}${location.url ? ` (${location.url}:${location.lineNumber})` : ""}`
+    );
   });
 }
 
@@ -131,7 +135,7 @@ async function assertMotionAndFocusAccessibility(page) {
   }
 }
 
-async function assertResultCardControls(page, filename) {
+async function assertResultCardControls(page, filename, expectedButtons) {
   for (const width of [280, 320, 380]) {
     await page.setViewportSize({ width, height: 820 });
     const card = page.locator(".result-card").filter({
@@ -160,7 +164,7 @@ async function assertResultCardControls(page, filename) {
       bounds.actionsBottom === undefined ||
       bounds.actionsTop < bounds.cardTop ||
       bounds.actionsBottom > bounds.cardBottom ||
-      bounds.visibleButtons !== 4
+      bounds.visibleButtons !== expectedButtons
     ) {
       throw new Error(`极端结果卡操作区被裁切（${width}px）：${JSON.stringify(bounds)}`);
     }
@@ -780,6 +784,57 @@ try {
     updatedAt: Date.now()
   };
   await putDatabaseFile(worker, downloadableFile);
+  const queuedSentinelFile = {
+    ...downloadableFile,
+    id: "file-e2e-queued-sentinel",
+    originalUrl: `${recursiveOrigin}/files/sample.txt?queued-sentinel=1`,
+    canonicalUrl: `${recursiveOrigin}/files/sample.txt?queued-sentinel=1`,
+    finalUrl: `${recursiveOrigin}/files/sample.txt?queued-sentinel=1`,
+    filename: "queued-sentinel.txt",
+    discoveredAt: Date.now() + 1,
+    updatedAt: Date.now() + 1
+  };
+  await putDatabaseFile(worker, queuedSentinelFile);
+  const previewImageFile = {
+    ...currentFiles[0],
+    id: "file-e2e-preview-image",
+    sessionId: liveSession.id,
+    originalUrl: `${recursiveOrigin}/files/pixel.png`,
+    canonicalUrl: `${recursiveOrigin}/files/pixel.png`,
+    finalUrl: `${recursiveOrigin}/files/pixel.png`,
+    sourcePageUrl: recursiveOrigin,
+    filename: "preview-image.png",
+    extension: "png",
+    category: "image",
+    mimeType: "image/png",
+    confidence: 100,
+    isExternal: true,
+    isDownloadable: true,
+    warnings: [],
+    discoveredAt: Date.now() + 2,
+    updatedAt: Date.now() + 2
+  };
+  await putDatabaseFile(worker, previewImageFile);
+  const previewAudioFile = {
+    ...currentFiles[0],
+    id: "file-e2e-preview-audio",
+    sessionId: liveSession.id,
+    originalUrl: `${recursiveOrigin}/files/preview.wav`,
+    canonicalUrl: `${recursiveOrigin}/files/preview.wav`,
+    finalUrl: `${recursiveOrigin}/files/preview.wav`,
+    sourcePageUrl: recursiveOrigin,
+    filename: "preview-audio.wav",
+    extension: "wav",
+    category: "audio",
+    mimeType: "audio/wav",
+    confidence: 100,
+    isExternal: true,
+    isDownloadable: true,
+    warnings: [],
+    discoveredAt: Date.now() + 3,
+    updatedAt: Date.now() + 3
+  };
+  await putDatabaseFile(worker, previewAudioFile);
 
   const extremeFilename = `${"超长文件名-".repeat(12)}fixture.extremelylongextension`;
   await putDatabaseFile(worker, {
@@ -790,6 +845,7 @@ try {
     canonicalUrl: `${server.origin}/files/${encodeURIComponent(extremeFilename)}`,
     filename: extremeFilename,
     extension: "extremelylongextension",
+    category: "audio",
     mimeType: `application/vnd.${"very-long-vendor-tree-".repeat(8)}fixture+json`,
     confidence: 100,
     sources: [
@@ -813,6 +869,12 @@ try {
     ) ||
     !rowsWithExtreme.files.some(
       (file) => file.id === downloadableFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === previewImageFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === previewAudioFile.id && file.sessionId === liveSession.id
     )
   ) {
     throw new Error("结果页 E2E 夹具未写入实时监听会话。");
@@ -828,11 +890,23 @@ try {
   });
 
   const sidepanelPage = await context.newPage();
+  const mediaRequestReferrers = [];
+  sidepanelPage.on("request", (request) => {
+    if (/\/files\/preview\.(?:png|wav)$/.test(new URL(request.url()).pathname)) {
+      mediaRequestReferrers.push({ url: request.url(), referrer: request.headers().referer });
+    }
+  });
   watchPage(sidepanelPage, "sidepanel");
   await sidepanelPage.setViewportSize({ width: 380, height: 820 });
   await sidepanelPage.goto(`${extensionOrigin}/sidepanel/index.html`, {
     waitUntil: "domcontentloaded"
   });
+  const referrerPolicy = await sidepanelPage
+    .locator('meta[name="referrer"]')
+    .getAttribute("content");
+  if (referrerPolicy !== "no-referrer") {
+    throw new Error(`侧栏媒体来源策略不安全：${referrerPolicy || "未设置"}`);
+  }
   await sidepanelPage.getByRole("heading", { name: "WebFile Hunter" }).waitFor();
   await sidepanelPage.getByRole("heading", { name: "开始扫描" }).waitFor();
   const currentSite = sidepanelPage.locator(".app-header p");
@@ -938,17 +1012,138 @@ try {
     path: resolve("test-results/edge-results-380.png"),
     fullPage: true
   });
-  await assertResultCardControls(sidepanelPage, extremeFilename);
+  await assertResultCardControls(sidepanelPage, extremeFilename, 6);
   await assertLastResultUnobscured(sidepanelPage);
 
-  await sidepanelPage
-    .getByRole("textbox", { name: "搜索文件名或 URL" })
-    .fill(downloadableFile.filename);
-  await sidepanelPage
-    .locator(".result-card")
-    .filter({
-      has: sidepanelPage.getByTitle(downloadableFile.canonicalUrl, { exact: true })
-    })
+  const resultSearch = sidepanelPage.getByRole("searchbox", { name: "搜索结果" });
+  await resultSearch.fill("  ＰＮＧ   preview  ");
+  await sidepanelPage.getByText("找到 1 项；多个关键词需全部匹配", { exact: true }).waitFor();
+  const imageCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(previewImageFile.canonicalUrl, { exact: true })
+  });
+  const imageThumbnail = imageCard.getByRole("img", {
+    name: `缩略图：${previewImageFile.filename}`
+  });
+  await eventually(
+    () =>
+      imageThumbnail.evaluate((image) => ({
+        complete: image.complete,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight
+      })),
+    (image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+  );
+  await assertResultCardControls(sidepanelPage, previewImageFile.filename, 6);
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-image-card-380.png"),
+    fullPage: true
+  });
+  const imageThumbnailButton = imageCard.getByRole("button", {
+    name: `放大预览：${previewImageFile.filename}`
+  });
+  await imageThumbnailButton.click();
+  const imageDialog = sidepanelPage.getByRole("dialog", {
+    name: `图片预览：${previewImageFile.filename}`
+  });
+  await imageDialog.waitFor();
+  await eventually(
+    () =>
+      imageDialog.locator("img").evaluate((image) => ({
+        complete: image.complete,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight
+      })),
+    (image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+  );
+  await assertResponsive(sidepanelPage, "图片预览");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-image-preview-380.png"),
+    fullPage: true
+  });
+  await sidepanelPage.keyboard.press("Escape");
+  await imageDialog.waitFor({ state: "detached" });
+  if (!(await imageThumbnailButton.evaluate((button) => button === document.activeElement))) {
+    throw new Error("关闭图片预览后焦点未返回缩略图按钮。");
+  }
+
+  await resultSearch.fill(previewAudioFile.filename);
+  const audioCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(previewAudioFile.canonicalUrl, { exact: true })
+  });
+  const inlineAudio = audioCard.locator("audio");
+  await eventually(
+    () =>
+      inlineAudio.evaluate((audio) => ({
+        autoplay: audio.autoplay,
+        duration: audio.duration,
+        error: audio.error?.code,
+        paused: audio.paused,
+        readyState: audio.readyState
+      })),
+    (state) => state.readyState >= 1 && Number.isFinite(state.duration)
+  );
+  await audioCard.getByText("0:01", { exact: true }).waitFor();
+  const inlinePlay = audioCard.getByRole("button", {
+    name: `播放音频：${previewAudioFile.filename}`
+  });
+  await inlinePlay.click();
+  await eventually(
+    () => inlineAudio.evaluate((audio) => audio.paused),
+    (paused) => paused === false
+  );
+  const inlinePause = audioCard.getByRole("button", {
+    name: `暂停音频：${previewAudioFile.filename}`
+  });
+  await inlinePause.click();
+  await eventually(
+    () => inlineAudio.evaluate((audio) => audio.paused),
+    (paused) => paused === true
+  );
+  await audioCard.getByRole("button", { name: "试听", exact: true }).click();
+  const audioDialog = sidepanelPage.getByRole("dialog", {
+    name: `音频试听：${previewAudioFile.filename}`
+  });
+  const audioPlayer = audioDialog.locator("audio");
+  const audioState = await eventually(
+    () =>
+      audioPlayer.evaluate((audio) => ({
+        autoplay: audio.autoplay,
+        controls: audio.controls,
+        duration: audio.duration,
+        error: audio.error?.code,
+        paused: audio.paused,
+        readyState: audio.readyState
+      })),
+    (state) => state.readyState >= 1 && Number.isFinite(state.duration)
+  );
+  if (
+    audioState.autoplay ||
+    !audioState.controls ||
+    !audioState.paused ||
+    audioState.error ||
+    audioState.duration <= 0
+  ) {
+    throw new Error(`音频试听状态异常：${JSON.stringify(audioState)}`);
+  }
+  await assertResponsive(sidepanelPage, "音频试听");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-audio-preview-380.png"),
+    fullPage: true
+  });
+  await sidepanelPage.keyboard.press("Escape");
+  await audioDialog.waitFor({ state: "detached" });
+  if (
+    mediaRequestReferrers.length === 0 ||
+    mediaRequestReferrers.some((request) => request.referrer)
+  ) {
+    throw new Error(`媒体请求来源策略异常：${JSON.stringify(mediaRequestReferrers)}`);
+  }
+
+  await resultSearch.fill(downloadableFile.filename);
+  const downloadableCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(downloadableFile.canonicalUrl, { exact: true })
+  });
+  await downloadableCard
     .getByRole("checkbox", { name: `选择 ${downloadableFile.filename}`, exact: true })
     .click();
   const exportedTxt = await captureDownload(
@@ -990,32 +1185,44 @@ try {
     throw new Error("JSON 结果导出结构或已选文件范围不正确。");
   }
 
-  sidepanelPage.once("dialog", (dialog) => void dialog.accept());
-  await sidepanelPage.getByRole("button", { name: "加入下载", exact: true }).click();
-  const queuedDownloads = await eventually(
-    () => send(permissionPage, { type: "GET_DOWNLOADS" }),
-    (downloads) =>
-      downloads.some((task) => task.candidateId === downloadableFile.id && task.status === "queued")
-  );
-  const queuedTask = queuedDownloads.find((task) => task.candidateId === downloadableFile.id);
-  if (!queuedTask) throw new Error("已选文件未加入下载队列。");
-
-  await sidepanelPage.getByRole("button", { name: "下载", exact: true }).click();
-  await sidepanelPage.getByRole("heading", { name: "下载队列" }).waitFor();
-  await assertResponsive(sidepanelPage, "下载页");
-  await assertActiveNavigation(sidepanelPage, "下载");
+  const [sentinelTask] = await send(permissionPage, {
+    type: "QUEUE_DOWNLOADS",
+    payload: { candidateIds: [queuedSentinelFile.id] }
+  });
+  if (!sentinelTask) throw new Error("单项下载隔离哨兵未加入队列。");
   const fileRequestIndex = await prepareDownloadCapture(worker);
-  await sidepanelPage.getByRole("button", { name: "开始队列", exact: true }).click();
+  sidepanelPage.once("dialog", (dialog) => void dialog.accept());
+  await downloadableCard.getByRole("button", { name: "下载", exact: true }).click();
   const requestedFileDownload = await capturedDownloadRequest(worker, fileRequestIndex);
   const completedDownloads = await eventually(
     () => send(permissionPage, { type: "GET_DOWNLOADS" }),
     (downloads) =>
-      downloads.some((task) => task.id === queuedTask.id && task.status === "completed")
+      downloads.some(
+        (task) => task.candidateId === downloadableFile.id && task.status === "completed"
+      )
   );
-  const completedTask = completedDownloads.find((task) => task.id === queuedTask.id);
-  if (completedTask?.browserDownloadId === undefined) {
-    throw new Error("下载任务完成后缺少 Edge 下载 ID。");
+  const completedTask = completedDownloads.find((task) => task.candidateId === downloadableFile.id);
+  if (
+    completedDownloads.find((task) => task.id === sentinelTask.id)?.status !== "queued" ||
+    completedTask?.browserDownloadId === undefined
+  ) {
+    throw new Error("单项下载误启动了其他队列任务，或自身未完成。");
   }
+
+  await resultSearch.fill(previewImageFile.filename);
+  const openedPagePromise = context.waitForEvent("page");
+  await imageCard.getByRole("button", { name: "打开", exact: true }).click();
+  const openedResourcePage = await openedPagePromise;
+  await openedResourcePage.waitForLoadState("domcontentloaded");
+  if (openedResourcePage.url() !== previewImageFile.canonicalUrl) {
+    throw new Error(`打开按钮未在新标签页打开资源：${openedResourcePage.url()}`);
+  }
+  await openedResourcePage.close();
+
+  await sidepanelPage.locator(".tabs").getByRole("button", { name: /下载/ }).click();
+  await sidepanelPage.getByRole("heading", { name: "下载队列" }).waitFor();
+  await assertResponsive(sidepanelPage, "下载页");
+  await assertActiveNavigation(sidepanelPage, "下载");
   const [browserTask] = await worker.evaluate(
     (id) => chrome.downloads.search({ id }),
     completedTask.browserDownloadId
@@ -1108,10 +1315,14 @@ try {
   );
   console.log("活动标签页切换与导航上下文同步通过");
   console.log("TXT/CSV/JSON 结果导出与历史导出真实落盘通过");
-  console.log(`下载队列真实落盘通过：${requestedFileDownload.filename}`);
+  console.log("结果卡图片缩略图、音频播放暂停与时长显示通过");
+  console.log("搜索归一化、多关键词完整匹配通过");
+  console.log("媒体浮层实际加载且默认不自动播放通过");
+  console.log("资源新标签页打开通过");
+  console.log(`单项下载隔离与真实落盘通过：${requestedFileDownload.filename}`);
   console.log("可能资源独立入口与 blob 安全提示通过");
   console.log("六页窄侧栏、可访问控件与历史清空隔离通过");
-  console.log("六页截图已写入 test-results/edge-*-380.png");
+  console.log("页面与媒体预览截图已写入 test-results/edge-*-380.png");
 } finally {
   await context?.close();
   await server.close();

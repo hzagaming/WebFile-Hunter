@@ -86,11 +86,11 @@ describe("ResultsPage", () => {
     );
     renderResults();
 
-    await user.click(screen.getAllByRole("button", { name: "来源页" })[0]!);
+    await user.click(screen.getAllByRole("button", { name: "打开来源页" })[0]!);
 
     expect(screen.getByRole("region", { name: "发现结果" })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "来源页" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "打开来源页" })[0]).toBeDisabled();
     finishOpen();
     await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
   });
@@ -99,7 +99,7 @@ describe("ResultsPage", () => {
     const user = userEvent.setup();
     const { text } = renderResults();
     await user.click(screen.getByRole("checkbox", { name: `选择 ${text.filename}` }));
-    await user.type(screen.getByRole("textbox", { name: "搜索文件名或 URL" }), "manual.pdf");
+    await user.type(screen.getByRole("searchbox", { name: "搜索结果" }), "manual.pdf");
 
     expect(screen.getByText("1 项已选（1 项已隐藏）")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "加入下载" }));
@@ -108,19 +108,67 @@ describe("ResultsPage", () => {
       type: "QUEUE_DOWNLOADS",
       payload: { candidateIds: [text.id] }
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("未加入任何文件");
+    expect(
+      await screen.findByText("未加入任何文件，请检查文件类型、大小与安全设置。")
+    ).toBeInTheDocument();
   });
 
   it("无效正则显示错误且不退化为普通搜索", async () => {
     const user = userEvent.setup();
     renderResults();
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索文件名或 URL" }), {
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索结果" }), {
       target: { value: "[" }
     });
     await user.click(screen.getByRole("checkbox", { name: "正则" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("正则表达式无效");
     expect(screen.getByText("当前筛选条件下没有结果")).toBeInTheDocument();
+  });
+
+  it("普通搜索会归一化空格与全角字符并匹配完整结果信息", async () => {
+    const user = userEvent.setup();
+    const session = scanSession({ filesDiscovered: 2 });
+    const image = fileCandidate("summer-cover", {
+      canonicalUrl: "https://example.test/assets/cover-file",
+      filename: "cover-file",
+      extension: "png",
+      category: "image",
+      mimeType: "image/png",
+      sourcePageTitle: "Summer Album"
+    });
+    const document = fileCandidate("manual", {
+      canonicalUrl: "https://example.test/manual.pdf",
+      filename: "manual.pdf",
+      extension: "pdf",
+      category: "document"
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [image, document] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "搜索结果" }), "  ＰＮＧ   summer  ");
+
+    expect(screen.getByTitle(image.filename)).toBeInTheDocument();
+    expect(screen.queryByTitle(document.filename)).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("找到 1 项");
+  });
+
+  it("扩展名筛选去除开头点号并执行精确匹配", async () => {
+    const user = userEvent.setup();
+    renderResults();
+    await user.click(screen.getByText("更多筛选与排序"));
+    const extension = screen.getByRole("textbox", { name: "扩展名" });
+
+    await user.type(extension, ".pd");
+    expect(screen.getByText(/当前筛选条件下没有结果/)).toBeInTheDocument();
+
+    await user.clear(extension);
+    await user.type(extension, ".pdf");
+    expect(screen.getByTitle("manual.pdf")).toBeInTheDocument();
+    expect(screen.queryByTitle("notes.txt")).not.toBeInTheDocument();
   });
 
   it("删除结果前确认，取消时不发送删除消息", async () => {
@@ -227,6 +275,206 @@ describe("ResultsPage", () => {
 
     await waitFor(() => expect(mocks.openTab).toHaveBeenCalledTimes(1));
     expect(mocks.openTab).toHaveBeenCalledWith({ url: text.canonicalUrl });
+  });
+
+  it("图片可在独立预览层查看并能关闭后返回触发按钮", async () => {
+    const user = userEvent.setup();
+    const session = scanSession({ filesDiscovered: 1 });
+    const image = fileCandidate("cover", {
+      canonicalUrl: "https://example.test/cover.webp",
+      filename: "cover.webp",
+      extension: "webp",
+      category: "image",
+      mimeType: "image/webp"
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [image] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    const thumbnail = screen.getByRole("img", { name: `缩略图：${image.filename}` });
+    expect(thumbnail).toHaveAttribute("src", image.canonicalUrl);
+    expect(thumbnail).toHaveAttribute("loading", "lazy");
+    expect(thumbnail).toHaveAttribute("decoding", "async");
+    const trigger = screen.getByRole("button", { name: `放大预览：${image.filename}` });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: `图片预览：${image.filename}` });
+    const preview = screen.getByRole("img", { name: image.filename });
+    expect(dialog).toBeInTheDocument();
+    expect(preview).toHaveAttribute("src", image.canonicalUrl);
+    expect(preview).toHaveAttribute("referrerpolicy", "no-referrer");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("音频可在独立预览层手动试听且不会自动播放", async () => {
+    const user = userEvent.setup();
+    const session = scanSession({ filesDiscovered: 1 });
+    const audio = fileCandidate("podcast", {
+      canonicalUrl: "https://example.test/podcast.mp3",
+      filename: "podcast.mp3",
+      extension: "mp3",
+      category: "audio",
+      mimeType: "audio/mpeg"
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [audio] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "试听" }));
+
+    const player = screen.getByLabelText(`音频播放器：${audio.filename}`);
+    expect(screen.getByRole("dialog", { name: `音频试听：${audio.filename}` })).toBeInTheDocument();
+    expect(player).toHaveAttribute("src", audio.canonicalUrl);
+    expect(player).toHaveAttribute("controls");
+    expect(player).toHaveAttribute("preload", "metadata");
+    expect(player).not.toHaveAttribute("autoplay");
+  });
+
+  it("音频卡片可直接播放、暂停并显示时长和失败状态", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const session = scanSession({ filesDiscovered: 1 });
+    const audio = fileCandidate("inline-podcast", {
+      canonicalUrl: "https://example.test/inline-podcast.mp3",
+      filename: "inline-podcast.mp3",
+      extension: "mp3",
+      category: "audio",
+      mimeType: "audio/mpeg"
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [audio] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    const card = screen.getByTitle(audio.filename).closest("article");
+    const media = card?.querySelector("audio");
+    expect(media).not.toBeNull();
+    if (!media) throw new TypeError("缺少内联音频元素");
+    expect(media).toHaveAttribute("aria-hidden", "true");
+    expect(media).not.toHaveAttribute("autoplay");
+    Object.defineProperty(media, "duration", { configurable: true, value: 65 });
+    fireEvent.loadedMetadata(media);
+    expect(screen.getByText("1:05")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: `播放音频：${audio.filename}` }));
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent.play(media);
+    await user.click(screen.getByRole("button", { name: `暂停音频：${audio.filename}` }));
+    expect(pause).toHaveBeenCalled();
+
+    fireEvent.error(media);
+    expect(screen.getByText("不可播放")).toBeInTheDocument();
+  });
+
+  it("切换卡片音频时会停止仍在加载的上一段音频", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const session = scanSession({ filesDiscovered: 2 });
+    const first = fileCandidate("first-audio", {
+      canonicalUrl: "https://example.test/first.mp3",
+      filename: "first.mp3",
+      extension: "mp3",
+      category: "audio",
+      mimeType: "audio/mpeg"
+    });
+    const second = fileCandidate("second-audio", {
+      canonicalUrl: "https://example.test/second.mp3",
+      filename: "second.mp3",
+      extension: "mp3",
+      category: "audio",
+      mimeType: "audio/mpeg"
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [first, second] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    const firstAudio = screen.getByTitle(first.filename).closest("article")?.querySelector("audio");
+    if (!firstAudio) throw new TypeError("缺少第一段内联音频");
+    await user.click(screen.getByRole("button", { name: `播放音频：${first.filename}` }));
+    await user.click(screen.getByRole("button", { name: `播放音频：${second.filename}` }));
+
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(pause).toHaveBeenCalledWith();
+  });
+
+  it("普通文件不显示媒体预览入口", () => {
+    renderResults();
+
+    expect(screen.queryByRole("button", { name: "预览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "试听" })).not.toBeInTheDocument();
+  });
+
+  it("单项下载只加入并启动对应结果", async () => {
+    const user = userEvent.setup();
+    const { text } = renderResults();
+    mocks.sendMessage.mockImplementation((message: { type: string }) =>
+      message.type === "QUEUE_DOWNLOADS"
+        ? Promise.resolve([
+            {
+              id: "download-one",
+              candidateId: text.id,
+              url: text.canonicalUrl,
+              filename: text.filename,
+              status: "queued",
+              createdAt: 1,
+              updatedAt: 1
+            }
+          ])
+        : Promise.resolve(undefined)
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "下载" })[0]!);
+
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledTimes(2));
+    expect(mocks.sendMessage).toHaveBeenNthCalledWith(1, {
+      type: "QUEUE_DOWNLOADS",
+      payload: { candidateIds: [text.id] }
+    });
+    expect(mocks.sendMessage).toHaveBeenNthCalledWith(2, {
+      type: "DOWNLOAD_ACTION",
+      payload: { action: "start", taskId: "download-one" }
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("已开始下载");
+  });
+
+  it("分段流媒体禁止试听、打开和单项下载", () => {
+    const session = scanSession({ filesDiscovered: 1 });
+    const stream = fileCandidate("stream-audio", {
+      canonicalUrl: "https://example.test/live.m3u8",
+      filename: "live.m3u8",
+      extension: "m3u8",
+      category: "audio",
+      mimeType: "application/vnd.apple.mpegurl",
+      isDownloadable: false,
+      warnings: ["segmented_stream"]
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [stream] })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "试听" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "打开" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下载" })).toBeDisabled();
+    expect(document.querySelector("audio")).not.toHaveAttribute("src");
   });
 
   it("窗口高度变化时同步调整虚拟结果列表高度", () => {

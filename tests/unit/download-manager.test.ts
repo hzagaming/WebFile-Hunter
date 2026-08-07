@@ -103,6 +103,38 @@ describe("DownloadManager", () => {
     expect(tasks).toHaveLength(3);
   });
 
+  it("指定任务开始下载时不会启动队列中的其他任务", async () => {
+    await putFiles("session", [file("first"), file("second")]);
+    const manager = new DownloadManager();
+    const [first, second] = await manager.queue(["first", "second"]);
+
+    await manager.action("start", second?.id);
+
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(download).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com/second.pdf" })
+    );
+    expect((await listDownloads()).find((task) => task.id === first?.id)?.status).toBe("queued");
+    expect((await listDownloads()).find((task) => task.id === second?.id)?.status).toBe(
+      "in_progress"
+    );
+  });
+
+  it("指定任务被浏览器拒绝时向调用方返回真实错误", async () => {
+    download.mockRejectedValueOnce(new Error("USER_CANCELED"));
+    await putFiles("session", [file("rejected")]);
+    const manager = new DownloadManager();
+    const [task] = await manager.queue(["rejected"]);
+
+    await expect(manager.action("start", task?.id)).rejects.toThrow("USER_CANCELED");
+
+    expect((await listDownloads())[0]).toMatchObject({
+      status: "failed",
+      error: "USER_CANCELED"
+    });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalled();
+  });
+
   it("启动中的任务被取消后不会被异步下载结果重新激活", async () => {
     let resolveDownload: ((id: number) => void) | undefined;
     download.mockImplementationOnce(

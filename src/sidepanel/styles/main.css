@@ -593,9 +593,19 @@ h3 {
 }
 .search-line {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 9px;
+}
+.search-clear {
+  min-height: 32px;
+  padding: 4px 6px;
+  font-size: 10px;
+}
+.search-summary {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 10px;
 }
 .filters details {
   margin-top: 7px;
@@ -632,6 +642,10 @@ h3 {
   box-shadow: 0 4px 15px rgba(28, 71, 91, 0.045);
   overflow: hidden;
 }
+.result-card.has-media {
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 8px;
+}
 .result-card.selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(17, 124, 166, 0.12);
@@ -652,6 +666,77 @@ h3 {
   font-size: 8px;
   font-weight: 800;
   overflow: hidden;
+}
+.result-media {
+  width: 42px;
+  height: 48px;
+  align-self: start;
+}
+.image-thumbnail {
+  display: grid;
+  padding: 0;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  color: #426170;
+  background: #e7eff2;
+}
+.image-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 150ms ease;
+}
+.image-thumbnail:hover:not(:disabled) img {
+  transform: scale(1.06);
+}
+.image-thumbnail span {
+  font-size: 8px;
+  font-weight: 800;
+}
+.inline-audio {
+  position: relative;
+}
+.inline-audio > button {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  padding: 4px 2px;
+  place-items: center;
+  border-color: #d7c9ec;
+  border-radius: 9px;
+  background: #f1ebfa;
+}
+.audio-play-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 99px;
+  color: #fff;
+  background: #8056bd;
+  font-size: 9px;
+}
+.audio-state {
+  max-width: 100%;
+  overflow: hidden;
+  color: #5f4486;
+  font-size: 7px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-media.failed {
+  border-color: #e4c37e;
+  background: #fff4d9;
+}
+.inline-audio audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 .type-audio {
   background: #8b62c7;
@@ -725,9 +810,9 @@ h3 {
   gap: 5px;
   margin-top: 8px;
 }
-.card-actions button {
+.result-card .card-actions button {
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 4px 6px;
   font-size: 10px;
 }
 .sticky-actions {
@@ -755,6 +840,90 @@ h3 {
   margin-left: auto;
 }
 
+.media-preview-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow: auto;
+  background: rgba(10, 32, 44, 0.72);
+  backdrop-filter: blur(5px);
+}
+.media-preview {
+  width: min(100%, 560px);
+  max-height: calc(100vh - 24px);
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgba(5, 24, 34, 0.35);
+}
+.media-preview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.media-preview-heading > div {
+  min-width: 0;
+}
+.media-preview-heading h2 {
+  overflow-wrap: anywhere;
+  font-size: 17px;
+}
+.media-preview-heading button {
+  flex: 0 0 auto;
+}
+.media-preview-url {
+  overflow: hidden;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-preview-stage {
+  display: grid;
+  min-height: 96px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background:
+    linear-gradient(45deg, #e5edf0 25%, transparent 25%),
+    linear-gradient(-45deg, #e5edf0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5edf0 75%),
+    linear-gradient(-45deg, transparent 75%, #e5edf0 75%), #f5f8f9;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+}
+.media-preview-stage.audio {
+  min-height: 112px;
+  padding: 16px 10px;
+  background: linear-gradient(135deg, #edf0fb, #f2f8fa);
+}
+.media-preview-stage img {
+  display: block;
+  width: 100%;
+  max-height: min(62vh, 680px);
+  object-fit: contain;
+}
+.media-preview-stage audio {
+  width: 100%;
+  min-width: 0;
+}
+.media-preview-tip {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .download-metrics {
   margin-top: 14px;
 }
@@ -766,6 +935,7 @@ h3 {
 }
 .download-card,
 .history-card {
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 11px;

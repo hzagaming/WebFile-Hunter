@@ -12,9 +12,36 @@ const mimeTypes = {
   ".csv": "text/csv; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
+  ".wav": "audio/wav",
   ".pdf": "application/pdf",
   ".zip": "application/zip"
 };
+
+function createPreviewWav() {
+  const sampleRate = 8000;
+  const dataSize = sampleRate;
+  const content = Buffer.alloc(44 + dataSize);
+  content.write("RIFF", 0);
+  content.writeUInt32LE(36 + dataSize, 4);
+  content.write("WAVE", 8);
+  content.write("fmt ", 12);
+  content.writeUInt32LE(16, 16);
+  content.writeUInt16LE(1, 20);
+  content.writeUInt16LE(1, 22);
+  content.writeUInt32LE(sampleRate, 24);
+  content.writeUInt32LE(sampleRate, 28);
+  content.writeUInt16LE(1, 32);
+  content.writeUInt16LE(8, 34);
+  content.write("data", 36);
+  content.writeUInt32LE(dataSize, 40);
+  for (let index = 0; index < dataSize; index += 1) {
+    const sample = 128 + Math.round(48 * Math.sin((2 * Math.PI * 440 * index) / sampleRate));
+    content.writeUInt8(sample, 44 + index);
+  }
+  return content;
+}
+
+const previewWav = createPreviewWav();
 
 export async function startTestServer() {
   let rateLimitHits = 0;
@@ -116,6 +143,14 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : Buffer.from([0x49, 0x44, 0x33, 0x00]));
       return;
     }
+    if (["/files/preview.wav", "/files/srcdoc-only.mp3"].includes(url.pathname)) {
+      response.writeHead(200, {
+        "Content-Type": "audio/wav",
+        "Content-Length": String(previewWav.length)
+      });
+      response.end(request.method === "HEAD" ? undefined : previewWav);
+      return;
+    }
     if (url.pathname === "/files/frame-video.mp4") {
       const content = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70]);
       response.writeHead(200, {
@@ -189,7 +224,17 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : icon);
       return;
     }
-    if (url.pathname === "/files/pixel.png") {
+    if (
+      [
+        "/files/pixel.png",
+        "/files/adopted-initial.webp",
+        "/files/adopted-live.webp",
+        "/files/lazy-background.avif",
+        "/files/lazy-large.webp",
+        "/files/lazy-small.webp",
+        "/files/theme-background.svg"
+      ].includes(url.pathname)
+    ) {
       const icon = await readFile(resolve("public/icons/icon16.png"));
       response.writeHead(200, {
         "Content-Type": "image/png",

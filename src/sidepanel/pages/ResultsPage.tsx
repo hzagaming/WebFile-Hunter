@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type KeyboardEvent,
+  type SetStateAction
+} from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
 import { exportCsv } from "@/export/export-csv";
@@ -16,6 +24,7 @@ interface Props {
 }
 
 type CategoryFilter = FileCategory | "all" | "possible";
+type PreviewKind = "audio" | "image";
 
 const categoryLabels: Record<CategoryFilter, string> = {
   all: "全部",
@@ -58,13 +67,190 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
+function formatDuration(seconds?: number): string {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return "试听";
+  const rounded = Math.round(seconds);
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
+}
+
+function resourceUrl(file: FileCandidate): string {
+  return file.finalUrl ?? file.canonicalUrl;
+}
+
 function canOpenResource(file: FileCandidate): boolean {
-  if (file.warnings.includes("temporary_blob")) return false;
+  if (file.warnings.some((warning) => ["temporary_blob", "segmented_stream"].includes(warning))) {
+    return false;
+  }
   try {
-    return ["http:", "https:"].includes(new URL(file.finalUrl ?? file.canonicalUrl).protocol);
+    const url = new URL(file.finalUrl ?? file.canonicalUrl);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
   } catch {
     return false;
   }
+}
+
+function previewKind(file: FileCandidate): PreviewKind | undefined {
+  if (file.category === "audio" || file.mimeType?.toLowerCase().startsWith("audio/")) {
+    return "audio";
+  }
+  if (file.category === "image" || file.mimeType?.toLowerCase().startsWith("image/")) {
+    return "image";
+  }
+  return undefined;
+}
+
+function canDownloadResource(file: FileCandidate): boolean {
+  return file.isDownloadable && canOpenResource(file);
+}
+
+function searchableValues(file: FileCandidate): string[] {
+  return [
+    file.filename,
+    file.canonicalUrl,
+    file.finalUrl,
+    file.extension,
+    file.mimeType,
+    categoryLabels[file.category],
+    file.sourcePageUrl,
+    file.sourcePageTitle,
+    ...file.sources.flatMap((item) => [item, sourceLabels[item]]),
+    ...file.warnings.flatMap((item) => [item, warningLabels[item]])
+  ].filter((value): value is string => Boolean(value));
+}
+
+function normalizeSearch(value: string): string {
+  return value.normalize("NFKC").trim().toLowerCase();
+}
+
+interface ImageThumbnailProps {
+  file: FileCandidate;
+  enabled: boolean;
+  open: () => void;
+}
+
+function ImageThumbnail({ file, enabled, open }: ImageThumbnailProps) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <button
+      className={`result-media image-thumbnail ${failed ? "failed" : ""}`}
+      type="button"
+      disabled={!enabled}
+      aria-label={`放大预览：${file.filename}`}
+      title={failed ? "缩略图加载失败，可尝试在新标签页打开" : "点击放大图片"}
+      onClick={open}
+    >
+      {enabled && !failed ? (
+        <img
+          src={resourceUrl(file)}
+          alt={`缩略图：${file.filename}`}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span aria-hidden="true">IMG</span>
+      )}
+    </button>
+  );
+}
+
+interface InlineAudioProps {
+  file: FileCandidate;
+  enabled: boolean;
+  active: boolean;
+  setActive: Dispatch<SetStateAction<string | undefined>>;
+}
+
+function InlineAudio({ file, enabled, active, setActive }: InlineAudioProps) {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [duration, setDuration] = useState<number>();
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const clearActive = (): void =>
+    setActive((current) => (current === file.id ? undefined : current));
+
+  useEffect(() => {
+    if (!active && (loading || playing)) {
+      audio.current?.pause();
+    }
+  }, [active, loading, playing]);
+
+  const toggle = async (): Promise<void> => {
+    const element = audio.current;
+    if (!element || !enabled) return;
+    if (active && playing) {
+      element.pause();
+      setPlaying(false);
+      setLoading(false);
+      clearActive();
+      return;
+    }
+    setFailed(false);
+    setLoading(true);
+    setActive(file.id);
+    try {
+      await element.play();
+    } catch {
+      setLoading(false);
+      setFailed(true);
+      clearActive();
+    }
+  };
+
+  const isLoading = active && loading;
+  const isPlaying = active && playing;
+  const state = failed
+    ? "不可播放"
+    : isLoading
+      ? "加载中"
+      : isPlaying
+        ? "播放中"
+        : formatDuration(duration);
+  return (
+    <div className={`result-media inline-audio ${failed ? "failed" : ""}`}>
+      <button
+        type="button"
+        disabled={!enabled}
+        aria-label={`${isPlaying ? "暂停" : "播放"}音频：${file.filename}`}
+        title={enabled ? "直接试听此音频" : "临时、分段或无效音频无法试听"}
+        onClick={() => void toggle()}
+      >
+        <span className="audio-play-icon" aria-hidden="true">
+          {isLoading ? "…" : isPlaying ? "Ⅱ" : "▶"}
+        </span>
+        <span className="audio-state" aria-live="polite">
+          {state}
+        </span>
+      </button>
+      <audio
+        ref={audio}
+        src={enabled ? resourceUrl(file) : undefined}
+        preload="metadata"
+        aria-hidden="true"
+        tabIndex={-1}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+        onCanPlay={() => setLoading(false)}
+        onPlay={() => {
+          setLoading(false);
+          setPlaying(true);
+        }}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          clearActive();
+        }}
+        onError={() => {
+          setLoading(false);
+          setPlaying(false);
+          setFailed(true);
+          clearActive();
+        }}
+      />
+    </div>
+  );
 }
 
 function canProbeResource(file: FileCandidate, snapshot: AppSnapshot): boolean {
@@ -96,6 +282,10 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [preview, setPreview] = useState<{ file: FileCandidate; kind: PreviewKind }>();
+  const [previewError, setPreviewError] = useState<string>();
+  const previewTrigger = useRef<HTMLElement | null>(null);
+  const [activeAudioId, setActiveAudioId] = useState<string>();
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const session = snapshot.activeSession;
   const possibleCount = snapshot.files.filter((file) => file.confidence < 50).length;
@@ -108,29 +298,34 @@ export function ResultsPage({ snapshot, refresh }: Props) {
 
   const { filtered, regexError } = useMemo(() => {
     let matcher: RegExp | undefined;
-    if (regex && search) {
+    const expression = search.trim();
+    if (regex && expression) {
       try {
-        matcher = new RegExp(search, "i");
+        matcher = new RegExp(expression, "iu");
       } catch {
         return { filtered: [], regexError: "正则表达式无效，请检查语法。" };
       }
     }
     const minBytes = minMb ? Number(minMb) * 1024 ** 2 : 0;
     const maxBytes = maxMb ? Number(maxMb) * 1024 ** 2 : Number.POSITIVE_INFINITY;
-    const query = search.toLowerCase();
+    const queryTerms = normalizeSearch(search).split(/\s+/).filter(Boolean);
+    const extensionQuery = normalizeSearch(extension).replace(/^\.+/, "");
+    const mimeQuery = normalizeSearch(mime);
     const result = snapshot.files.filter((file) => {
       const isPossible = file.confidence < 50;
+      const values = searchableValues(file);
+      const haystack = normalizeSearch(values.join("\n"));
       const matchesSearch =
-        !search ||
+        !expression ||
         (matcher
-          ? matcher.test(`${file.filename}\n${file.canonicalUrl}`)
-          : `${file.filename}\n${file.canonicalUrl}`.toLowerCase().includes(query));
+          ? matcher.test(values.join("\n"))
+          : queryTerms.every((term) => haystack.includes(term)));
       return (
         matchesSearch &&
         (category === "all" ||
           (category === "possible" ? isPossible : file.category === category)) &&
-        (!extension || file.extension?.includes(extension.toLowerCase())) &&
-        (!mime || file.mimeType?.toLowerCase().includes(mime.toLowerCase())) &&
+        (!extensionQuery || normalizeSearch(file.extension ?? "") === extensionQuery) &&
+        (!mimeQuery || normalizeSearch(file.mimeType ?? "").includes(mimeQuery)) &&
         (source === "all" || file.sources.includes(source as FileCandidate["source"])) &&
         (scope === "all" || (scope === "external") === file.isExternal) &&
         file.confidence >= minConfidence &&
@@ -241,6 +436,88 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       fail(error, "无法加入下载队列。");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const download = async (file: FileCandidate): Promise<void> => {
+    if (
+      snapshot.settings.confirmBeforeDownload &&
+      !confirm(`现在下载“${file.filename}”？浏览器可能继续询问保存位置。`)
+    ) {
+      return;
+    }
+    setBusy(true);
+    setFeedback(undefined);
+    try {
+      const existing = snapshot.downloads.find(
+        (task) =>
+          task.candidateId === file.id &&
+          ["queued", "starting", "in_progress"].includes(task.status)
+      );
+      const task =
+        existing ??
+        (
+          await sendMessage<DownloadTask[]>({
+            type: "QUEUE_DOWNLOADS",
+            payload: { candidateIds: [file.id] }
+          })
+        )[0];
+      if (!task) {
+        setFeedback({
+          kind: "warning",
+          text: "未创建下载任务，请检查文件类型、大小与安全设置。"
+        });
+        return;
+      }
+      if (["starting", "in_progress"].includes(task.status)) {
+        setFeedback({ kind: "warning", text: "该文件已在下载中。" });
+        return;
+      }
+      await sendMessage({
+        type: "DOWNLOAD_ACTION",
+        payload: { action: "start", taskId: task.id }
+      });
+      setFeedback({ kind: "success", text: `已开始下载“${file.filename}”。` });
+    } catch (error) {
+      fail(error, "无法开始下载。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openPreview = (file: FileCandidate, kind: PreviewKind): void => {
+    setActiveAudioId(undefined);
+    previewTrigger.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPreviewError(undefined);
+    setPreview({ file, kind });
+  };
+
+  const closePreview = (): void => {
+    setPreview(undefined);
+    setPreviewError(undefined);
+    queueMicrotask(() => previewTrigger.current?.focus());
+  };
+
+  const handlePreviewKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePreview();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button, audio")].filter(
+      (element) => !element.hasAttribute("disabled") && element.tabIndex >= 0
+    );
+    if (!controls.length) return;
+    const first = controls[0]!;
+    const last = controls.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   };
 
@@ -360,17 +637,28 @@ export function ResultsPage({ snapshot, refresh }: Props) {
       <div className="filters">
         <div className="search-line">
           <input
-            aria-label="搜索文件名或 URL"
-            placeholder="搜索文件名或 URL"
+            type="search"
+            aria-label="搜索结果"
+            placeholder="文件名、URL、类型或 MIME"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {search ? (
+            <button className="ghost search-clear" type="button" onClick={() => setSearch("")}>
+              清空
+            </button>
+          ) : null}
           <label>
             <input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)} />
             正则
           </label>
         </div>
         {regexError ? <FeedbackNotice kind="error">{regexError}</FeedbackNotice> : null}
+        {search.trim() && !regexError ? (
+          <p className="search-summary" role="status">
+            找到 {filtered.length} 项{regex ? "正则匹配" : "；多个关键词需全部匹配"}
+          </p>
+        ) : null}
         <details>
           <summary>更多筛选与排序</summary>
           <div className="form-grid compact">
@@ -477,9 +765,13 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           getKey={(file) => file.id}
           renderItem={(file) => {
             const openable = canOpenResource(file);
+            const mediaKind = previewKind(file);
+            const downloadable = canDownloadResource(file);
             const probeAllowed = canProbeResource(file, snapshot);
             return (
-              <article className={`result-card ${selected.has(file.id) ? "selected" : ""}`}>
+              <article
+                className={`result-card ${mediaKind ? "has-media" : ""} ${selected.has(file.id) ? "selected" : ""}`}
+              >
                 <input
                   className="card-check"
                   type="checkbox"
@@ -488,9 +780,26 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                   disabled={busy}
                   onChange={() => toggle(file.id)}
                 />
-                <div className={`file-type type-${file.category}`}>
-                  {file.extension?.toUpperCase() ?? "?"}
-                </div>
+                {mediaKind === "image" ? (
+                  <ImageThumbnail
+                    key={resourceUrl(file)}
+                    file={file}
+                    enabled={openable}
+                    open={() => openPreview(file, "image")}
+                  />
+                ) : mediaKind === "audio" ? (
+                  <InlineAudio
+                    key={resourceUrl(file)}
+                    file={file}
+                    enabled={openable}
+                    active={activeAudioId === file.id}
+                    setActive={setActiveAudioId}
+                  />
+                ) : (
+                  <div className={`file-type type-${file.category}`}>
+                    {file.extension?.toUpperCase() ?? "?"}
+                  </div>
+                )}
                 <div className="result-body">
                   <h3 title={file.filename}>{file.filename}</h3>
                   <p className="url" title={file.canonicalUrl}>
@@ -519,6 +828,39 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     ))}
                   </div>
                   <div className="card-actions">
+                    {mediaKind ? (
+                      <button
+                        type="button"
+                        disabled={busy || !openable}
+                        title={!openable ? "临时、分段或无效媒体无法预览" : undefined}
+                        onClick={() => openPreview(file, mediaKind)}
+                      >
+                        {mediaKind === "audio" ? "试听" : "预览"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={busy || !openable}
+                      title={openable ? "在新标签页打开资源" : "临时、分段或无效资源无法打开"}
+                      onClick={() =>
+                        void runCardAction(
+                          () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
+                          "已在新标签页打开文件。",
+                          "无法打开文件链接。"
+                        )
+                      }
+                    >
+                      打开
+                    </button>
+                    <button
+                      className="primary"
+                      type="button"
+                      disabled={busy || !downloadable}
+                      title={downloadable ? "下载此文件" : "该资源不符合直接下载的安全条件"}
+                      onClick={() => void download(file)}
+                    >
+                      下载
+                    </button>
                     <button
                       type="button"
                       disabled={busy}
@@ -535,6 +877,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                     <button
                       type="button"
                       disabled={busy}
+                      title="在新标签页打开发现该资源的网页"
                       onClick={() =>
                         void runCardAction(
                           () => chrome.tabs.create({ url: file.sourcePageUrl }),
@@ -543,20 +886,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                         )
                       }
                     >
-                      来源页
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !openable}
-                      onClick={() =>
-                        void runCardAction(
-                          () => chrome.tabs.create({ url: file.finalUrl ?? file.canonicalUrl }),
-                          "已打开文件链接。",
-                          "无法打开文件链接。"
-                        )
-                      }
-                    >
-                      打开
+                      打开来源页
                     </button>
                     <button
                       type="button"
@@ -640,6 +970,68 @@ export function ResultsPage({ snapshot, refresh }: Props) {
           </button>
         </div>
       </div>
+      {preview ? (
+        <div
+          className="media-preview-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closePreview();
+          }}
+        >
+          <div
+            className="media-preview"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="media-preview-title"
+            onKeyDown={handlePreviewKeyDown}
+          >
+            <div className="media-preview-heading">
+              <div>
+                <p className="eyebrow">{preview.kind === "audio" ? "媒体试听" : "媒体预览"}</p>
+                <h2 id="media-preview-title">
+                  {preview.kind === "audio" ? "音频试听" : "图片预览"}：{preview.file.filename}
+                </h2>
+              </div>
+              <button type="button" autoFocus aria-label="关闭预览" onClick={closePreview}>
+                关闭
+              </button>
+            </div>
+            <p
+              className="media-preview-url"
+              title={preview.file.finalUrl ?? preview.file.canonicalUrl}
+            >
+              {preview.file.finalUrl ?? preview.file.canonicalUrl}
+            </p>
+            <div className={`media-preview-stage ${preview.kind}`}>
+              {preview.kind === "image" ? (
+                <img
+                  key={preview.file.id}
+                  src={preview.file.finalUrl ?? preview.file.canonicalUrl}
+                  alt={preview.file.filename}
+                  referrerPolicy="no-referrer"
+                  onLoad={() => setPreviewError(undefined)}
+                  onError={() => setPreviewError("图片加载失败，资源可能已过期或拒绝外部预览。")}
+                />
+              ) : (
+                <audio
+                  key={preview.file.id}
+                  src={preview.file.finalUrl ?? preview.file.canonicalUrl}
+                  aria-label={`音频播放器：${preview.file.filename}`}
+                  controls
+                  preload="metadata"
+                  onCanPlay={() => setPreviewError(undefined)}
+                  onError={() => setPreviewError("音频加载失败，资源可能已过期或不受浏览器支持。")}
+                />
+              )}
+            </div>
+            {previewError ? <FeedbackNotice kind="error">{previewError}</FeedbackNotice> : null}
+            <p className="media-preview-tip">
+              {preview.kind === "audio"
+                ? "点击播放器开始试听；不会自动播放。"
+                : "图片按原始比例缩放显示。"}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

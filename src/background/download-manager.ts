@@ -75,6 +75,14 @@ export class DownloadManager {
     action: "start" | "pause" | "resume" | "cancel" | "retry" | "clear_completed" | "open" | "show",
     taskId?: string
   ): Promise<void> {
+    if (action === "start" && taskId) {
+      try {
+        await this.#serializeMutation(() => this.#startOne(taskId));
+      } finally {
+        await this.#notify();
+      }
+      return;
+    }
     if (action === "start" || action === "resume") {
       this.#paused = false;
       await this.#pump();
@@ -124,6 +132,22 @@ export class DownloadManager {
       else chrome.downloads.show(task.browserDownloadId);
     }
     await this.#notify();
+  }
+
+  async #startOne(taskId: string): Promise<void> {
+    const tasks = await listDownloads();
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task || task.status !== "queued") return;
+    const settings = await getSettings();
+    const active = tasks.filter((item) => ["starting", "in_progress"].includes(item.status)).length;
+    if (active >= settings.downloadConcurrency) {
+      throw new TypeError("下载并发已满，文件已保留在队列中。");
+    }
+    await this.#start(task, settings.askWhereToSave);
+    const current = (await listDownloads()).find((item) => item.id === taskId);
+    if (current?.status === "failed") {
+      throw new TypeError(current.error ?? "浏览器拒绝了下载任务。");
+    }
   }
 
   async getSnapshot(): Promise<DownloadTask[]> {
