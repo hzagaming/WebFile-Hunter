@@ -48,6 +48,21 @@ describe("extractCssUrls", () => {
     expect(extractCssImports(css)).toEqual([]);
   });
 
+  it("忽略字符串中的伪函数并解码 CSS 转义 URL", () => {
+    const css = String.raw`
+      .label::before { content: "url(fake.png) @import 'fake.css'"; }
+      .escaped { background: url(icon\20 large.png); }
+      .paren { background: url(image\)preview.png); }
+      @import "theme\2d dark.css";
+    `;
+
+    expect(extractCssUrls(css)).toEqual(
+      expect.arrayContaining(["icon large.png", "image)preview.png", "theme-dark.css"])
+    );
+    expect(extractCssUrls(css)).not.toEqual(expect.arrayContaining(["fake.png", "fake.css"]));
+    expect(extractCssImports(css)).toEqual(["theme-dark.css"]);
+  });
+
   it("只提取可递归读取的 CSS import", () => {
     expect(
       extractCssImports(`

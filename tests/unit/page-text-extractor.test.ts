@@ -71,7 +71,7 @@ describe("extractPageText", () => {
 
   it("折叠 details 只提取摘要，展开后才提取正文", () => {
     document.body.innerHTML = `
-      <details><summary>折叠摘要</summary><p>closed-details-secret</p></details>
+      <details><summary>折叠摘要</summary>direct-details-secret<p>closed-details-secret</p></details>
       <details open><summary>展开摘要</summary><p>展开公开正文</p></details>
     `;
 
@@ -79,5 +79,6 @@ describe("extractPageText", () => {
     expect(content).toContain("折叠摘要");
     expect(content).toContain("展开公开正文");
     expect(content).not.toContain("closed-details-secret");
+    expect(content).not.toContain("direct-details-secret");
   });
 });

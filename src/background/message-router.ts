@@ -12,7 +12,7 @@ import {
 } from "@/database/db";
 import { getSettings, saveSettings } from "@/database/settings";
 import type { AppSnapshot, ExtensionRequest, MessageResponse } from "@/messaging/message-types";
-import type { ScanSession } from "@/types/models";
+import type { FileCandidate, ScanSession } from "@/types/models";
 import { validateExtensionRequest } from "@/messaging/message-validation";
 import { clampScanConfig } from "@/utils/defaults";
 import { broadcast } from "./broadcast";
@@ -251,31 +251,58 @@ export class MessageRouter {
         if (resourceOrigin !== session.origin && !(await hasOriginPermission(file.canonicalUrl))) {
           throw new TypeError("第三方资源需要完整嗅探或对应网站权限后才能探测。");
         }
-        const controller = new AbortController();
-        const metadata = await probeUrlMetadata(file.canonicalUrl, {
-          origin: resourceOrigin,
-          config: session.config,
-          signal: controller.signal
-        });
-        const enriched = createFileCandidate({
-          url: file.canonicalUrl,
-          source: "MANUAL_URL",
-          sourcePageUrl: file.sourcePageUrl,
-          finalUrl: metadata.finalUrl,
-          ...(metadata.mimeType ? { mimeType: metadata.mimeType } : {}),
-          ...(metadata.contentLength !== undefined
-            ? { contentLength: metadata.contentLength }
-            : {}),
-          ...(metadata.contentDisposition
-            ? { contentDisposition: metadata.contentDisposition }
-            : {}),
-          ...(metadata.etag ? { etag: metadata.etag } : {}),
-          ...(metadata.lastModified ? { lastModified: metadata.lastModified } : {}),
-          ...(metadata.acceptRanges ? { acceptRanges: metadata.acceptRanges } : {})
-        });
-        const stored = await putFiles(session.id, [enriched]);
-        broadcast({ type: "FILES_DISCOVERED", payload: { sessionId: session.id, files: stored } });
-        return stored[0];
+        const storeStatus = async (
+          metadataStatus: FileCandidate["metadataStatus"]
+        ): Promise<void> => {
+          const stored = await putFiles(session.id, [
+            { ...file, metadataStatus, updatedAt: Date.now() }
+          ]);
+          if (stored.length) {
+            broadcast({
+              type: "FILES_DISCOVERED",
+              payload: { sessionId: session.id, files: stored }
+            });
+          }
+        };
+        await storeStatus("pending");
+        try {
+          const settings = await getSettings();
+          const controller = new AbortController();
+          const metadata = await probeUrlMetadata(file.canonicalUrl, {
+            origin: resourceOrigin,
+            config: session.config,
+            signal: controller.signal
+          });
+          const enriched = createFileCandidate({
+            url: file.canonicalUrl,
+            source: "MANUAL_URL",
+            sourcePageUrl: file.sourcePageUrl,
+            finalUrl: metadata.finalUrl,
+            ...(metadata.mimeType ? { mimeType: metadata.mimeType } : {}),
+            ...(metadata.contentLength !== undefined
+              ? { contentLength: metadata.contentLength }
+              : {}),
+            ...(metadata.contentDisposition
+              ? { contentDisposition: metadata.contentDisposition }
+              : {}),
+            ...(metadata.etag ? { etag: metadata.etag } : {}),
+            ...(metadata.lastModified ? { lastModified: metadata.lastModified } : {}),
+            ...(metadata.acceptRanges ? { acceptRanges: metadata.acceptRanges } : {}),
+            customExtensions: settings.customExtensions,
+            customMimeTypes: settings.customMimeTypes
+          });
+          const stored = await putFiles(session.id, [enriched]);
+          if (stored.length) {
+            broadcast({
+              type: "FILES_DISCOVERED",
+              payload: { sessionId: session.id, files: stored }
+            });
+          }
+          return stored[0];
+        } catch (error) {
+          await storeStatus("failed").catch(() => undefined);
+          throw error;
+        }
       }
       case "DELETE_RESULTS": {
         const session = await getSession(message.payload.sessionId);

@@ -166,8 +166,6 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         <button
           className="action-card"
           type="button"
-          aria-expanded={showCrawlConfig}
-          aria-controls="crawl-config"
           disabled={!canScan || Boolean(working)}
           onClick={() => void run("monitor")}
         >
@@ -185,6 +183,8 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
         <button
           className="action-card"
           type="button"
+          aria-expanded={showCrawlConfig}
+          aria-controls="crawl-config"
           disabled={!canScan || Boolean(working)}
           onClick={() => setShowCrawlConfig(true)}
         >
@@ -370,7 +370,7 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
           <button
             className="primary full"
             type="button"
-            disabled={working === "crawl"}
+            disabled={Boolean(working)}
             onClick={() => void run("crawl")}
           >
             确认并请求当前站点权限

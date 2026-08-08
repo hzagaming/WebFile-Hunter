@@ -28,6 +28,7 @@ export function VirtualList<T>({
   const onScroll = (event: UIEvent<HTMLDivElement>): void =>
     setScrollTop(event.currentTarget.scrollTop);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget) return;
     const maxScroll = Math.max(0, items.length * itemHeight + endPadding - height);
     const next =
       event.key === "Home"

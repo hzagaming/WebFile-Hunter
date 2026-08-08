@@ -32,6 +32,14 @@ function displayHost(url: string): string {
   }
 }
 
+function isSupportedPage(url?: string): boolean {
+  try {
+    return Boolean(url && ["http:", "https:"].includes(new URL(url).protocol));
+  } catch {
+    return false;
+  }
+}
+
 export function TextPage({ snapshot, refresh }: Props) {
   const [selectedId, setSelectedId] = useState(snapshot.textDocuments[0]?.id ?? "");
   const [search, setSearch] = useState("");
@@ -44,6 +52,7 @@ export function TextPage({ snapshot, refresh }: Props) {
     [documents]
   );
   const matches = selected ? matchCount(selected.content, search) : 0;
+  const canRecapture = Boolean(refresh && isSupportedPage(snapshot.activeTab?.url));
 
   const fail = (error: unknown, fallback: string): void =>
     setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
@@ -125,7 +134,7 @@ export function TextPage({ snapshot, refresh }: Props) {
       {!documents.length ? (
         <div className="text-empty-wrap">
           <div className="empty-state">当前任务还没有可提取的网页文字。</div>
-          {snapshot.activeTab && refresh ? (
+          {canRecapture ? (
             <button
               className="primary full"
               type="button"
@@ -212,7 +221,7 @@ export function TextPage({ snapshot, refresh }: Props) {
             <button type="button" disabled={Boolean(busy)} onClick={() => void exportAll()}>
               导出 TXT
             </button>
-            {snapshot.activeTab && refresh ? (
+            {canRecapture ? (
               <button
                 className="primary"
                 type="button"

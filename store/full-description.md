@@ -5,13 +5,13 @@ WebFile Hunter 帮助用户在主动操作后发现网页中公开引用的 TXT�
 主要功能：
 
 - 侧栏独立打开时也能识别任意普通 HTTP/HTTPS 活动网页；
-- 按站点授权后扫描当前页面的 DOM、CSS `@import`/`image-set`、构造样式表和已加载资源；
+- 按站点授权后扫描当前页面的 DOM、标准 `srcset`、CSS `@import`/`image-set`、构造样式表和已加载资源；
 - 显式授权后完整嗅探当前标签页的同站及第三方 CDN、媒体、接口和 frame 请求；
-- 在明确授权后通过静态 HTML、递归 `@import` 样式表、HTTP Link 响应头、可选 Sitemap/Sitemap Index（含 raw gzip 和根路径回退）及当前 SPA 已渲染 DOM 做同源限速递归，并限制页面、查询变体与样式表数量；
+- 在明确授权后通过静态 HTML、经过响应类型校验的递归 `@import` 样式表、HTTP Link 响应头、可选 Sitemap/Sitemap Index（含 raw gzip 和根路径回退）及当前 SPA 已渲染 DOM 做同源限速递归，并限制页面、查询变体与样式表数量；
 - 识别 Open Graph、Twitter Card、itemprop 与动态媒体属性，并按页面声明解码常见字符集；
-- 在独立文本栏提取公开可见正文，按页面搜索、复制或导出 TXT，并排除显式隐藏内容和用户输入；
-- 通过扩展名、MIME 和 Content-Disposition 识别无后缀文件；
-- 严格分类与分类计数、一键重置筛选、图片缩略图、音频试听、完整请求元数据详情、批量选择、复制、TXT/CSV/JSON 导出；
+- 在独立文本栏提取公开可见正文，按页面搜索、复制或导出 TXT，并排除显式隐藏、折叠内容和用户输入；
+- 通过内置或用户自定义扩展名、MIME、Content-Disposition 和查询文件名识别文件；
+- 严格分类与分类计数、一键重置筛选、图片缩略图、音频试听、带探测状态的完整请求元数据详情、批量选择、复制、TXT/CSV/JSON 导出；
 - 用户选择后加入下载队列并手动开始；
 - 本地历史、暂停、恢复、权限撤销和安全的数据清理确认。
 

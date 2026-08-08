@@ -144,24 +144,41 @@ export function classifyFile(input: ClassificationInput): ClassificationResult {
   };
 }
 
-export function looksLikeFileUrl(raw: string): boolean {
+const EMPTY_CUSTOM_EXTENSIONS: ReadonlySet<string> = new Set();
+
+export function looksLikeFileUrl(
+  raw: string,
+  customExtensions: ReadonlySet<string> = EMPTY_CUSTOM_EXTENSIONS
+): boolean {
   if (raw.startsWith("blob:")) return true;
   try {
     const url = new URL(raw);
+    const isRecognizedExtension = (extension: string | undefined): boolean =>
+      Boolean(
+        extension &&
+        (EXTENSION_CATEGORY.has(extension) ||
+          STREAM_EXTENSIONS.has(extension) ||
+          customExtensions.has(extension))
+      );
     const extension = getExtension(url.pathname);
-    if (extension && (EXTENSION_CATEGORY.has(extension) || STREAM_EXTENSIONS.has(extension)))
-      return true;
+    if (isRecognizedExtension(extension)) return true;
     for (const key of ["response-content-disposition", "content-disposition"]) {
       const filename = parseContentDispositionFilename(url.searchParams.get(key) ?? undefined);
-      if (filename && EXTENSION_CATEGORY.has(getExtension(filename) ?? "")) return true;
+      if (filename && isRecognizedExtension(getExtension(filename))) return true;
     }
-    return ["filename", "file", "file_name", "download", "download_name", "attachment"].some(
-      (key) => {
-        const value = url.searchParams.get(key);
-        const queryExtension = value ? getExtension(value) : undefined;
-        return Boolean(queryExtension && EXTENSION_CATEGORY.has(queryExtension));
-      }
-    );
+    return [
+      "filename",
+      "file",
+      "file_name",
+      "download",
+      "download_name",
+      "attachment",
+      "name"
+    ].some((key) => {
+      const value = url.searchParams.get(key);
+      const queryExtension = value ? getExtension(value) : undefined;
+      return isRecognizedExtension(queryExtension);
+    });
   } catch {
     return false;
   }

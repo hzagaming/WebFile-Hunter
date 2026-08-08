@@ -104,11 +104,12 @@ function hasHiddenAncestor(element: Element): boolean {
   return false;
 }
 
-function isInsideCollapsedDetails(element: Element): boolean {
-  const details = element.closest("details:not([open])");
-  if (!details || details === element) return false;
+function isInsideCollapsedDetails(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  const details = element?.closest("details:not([open])");
+  if (!details || node === details) return false;
   const summary = [...details.children].find((child) => child.tagName === "SUMMARY");
-  return !summary?.contains(element);
+  return !summary?.contains(node);
 }
 
 export function extractPageText(): ExtractedPageText {
@@ -144,9 +145,7 @@ export function extractPageText(): ExtractedPageText {
             ? NodeFilter.FILTER_REJECT
             : NodeFilter.FILTER_ACCEPT;
         }
-        return node.parentElement && isInsideCollapsedDetails(node.parentElement)
-          ? NodeFilter.FILTER_REJECT
-          : NodeFilter.FILTER_ACCEPT;
+        return isInsideCollapsedDetails(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
       }
     });
     let node = walker.nextNode();

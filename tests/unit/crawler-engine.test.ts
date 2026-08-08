@@ -619,6 +619,51 @@ describe("crawler engine lifecycle", () => {
     );
   });
 
+  it("明确非 CSS 的 stylesheet 响应不会产生伪资源", async () => {
+    const responses: Record<string, { body: string; type: string }> = {
+      "https://example.test/start": {
+        body: '<link rel="stylesheet" href="/api/theme">',
+        type: "text/html"
+      },
+      "https://example.test/api/theme": {
+        body: '{"example":"url(/files/false-positive.png)"}',
+        type: "application/json"
+      }
+    };
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        const entry = responses[url];
+        return Promise.resolve(
+          entry
+            ? new Response(entry.body, {
+                status: 200,
+                headers: { "Content-Type": entry.type }
+              })
+            : new Response(null, { status: 404 })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: { ...recursive.config, probeMetadata: false, minDelayMs: 0 }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.putFiles.mock.calls.flatMap(([, candidates]) => candidates)).not.toContainEqual(
+      expect.objectContaining({
+        canonicalUrl: "https://example.test/files/false-positive.png"
+      })
+    );
+  });
+
   it("从 HTTP Refresh 响应头继续安全的同源页面", async () => {
     const refreshedUrl = "https://example.test/refreshed";
     mocks.readLimitedText.mockImplementation((response: Response) => response.text());

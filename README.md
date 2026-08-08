@@ -6,12 +6,12 @@ WebFile Hunter 是一个面向 Microsoft Edge 的 Manifest V3 扩展。它只在
 
 ## 功能
 
-- 当前页面扫描：DOM 属性、`download`、`srcset`、Open Graph、JSON-LD、itemprop、enclosure、object param、template、开放 Shadow DOM、内联/可访问样式表、Performance Resource Timing、可注入 iframe 与同源继承 Frame。
-- 网页文字提取：独立侧栏按当前页、权限允许的 frame 与递归页面保存公开可见正文，支持搜索、复制和 TXT 导出；排除隐藏内容与用户输入。
+- 当前页面扫描：DOM 属性、`download`、标准 `srcset`、Open Graph、JSON-LD、itemprop、enclosure、object param、template、开放 Shadow DOM、内联/可访问样式表、Performance Resource Timing、可注入 iframe 与同源继承 Frame。
+- 网页文字提取：独立侧栏按当前页、权限允许的 frame 与递归页面保存公开可见正文，支持搜索、复制和 TXT 导出；排除隐藏、折叠内容与用户输入，并按 Frame 地址隔离保存。
 - 完整实时嗅探：用户明确授权后，仅观察当前标签页的同站与第三方 CDN、媒体、接口及 frame 请求，合并 `requestId` 对应的请求与响应头，并在同源导航后按剩余时长继续监听。
 - 同源递归扫描：直接 GET 静态 HTML，并读取明确引用的同源样式表与递归 `@import`，结合页面链接、HTTP Link/Refresh、可选 Sitemap/Sitemap Index（含 raw gzip）和当前 SPA 已渲染 DOM 做 BFS；提供深度、页面、查询变体、样式表、并发、速率、超时和重定向硬限制，以及暂停、恢复和取消。
-- 文件识别：扩展名、MIME、Content-Disposition、标签上下文、云存储查询参数、请求类型和响应大小综合评分；严格区分 3D 模型、源码、字体、字幕、数据、文档、电子书、分段媒体等分类。
-- 元数据探测：仅资源头信息优先 HEAD，服务器不支持 HEAD 时使用 `Range: bytes=0-0`，不完整下载大文件；HTML 页面抓取不依赖 HEAD，并按响应头、BOM 或 meta 声明解码字符集。
+- 文件识别：内置或用户自定义扩展名、MIME、Content-Disposition、标签上下文、云存储查询文件名、请求类型和响应大小综合评分；严格区分 3D 模型、源码、字体、字幕、数据、文档、电子书、分段媒体等分类。
+- 元数据探测：仅资源头信息优先 HEAD，服务器不支持 HEAD 时使用 `Range: bytes=0-0`，不完整下载大文件；界面显示探测中、完成与失败状态并保留自定义分类。HTML 页面抓取不依赖 HEAD，并按响应头、BOM 或 meta 声明解码字符集。
 - 结果管理：图片缩略图、音频手动试听、完整请求元数据详情、独立打开/下载/复制操作、全分类计数与一键重置筛选；支持分类、扩展名、MIME、大小、来源、置信度、内外部、关键字和正则筛选，虚拟列表支持大量结果。
 - 本地导出：TXT、CSV（可带 UTF-8 BOM）、JSON。
 - 下载队列：用户手动开始、并发限制、取消、重试、打开文件、在文件夹中显示。
@@ -109,7 +109,7 @@ npm run build
 
 ### 同源递归扫描
 
-先显示配置，再请求当前站点权限。后台使用 GET 读取静态 HTML，并从页面链接、HTTP Link/Refresh、可选 Sitemap/Sitemap Index（支持 raw gzip）和启动时当前标签页已渲染的 SPA DOM 补充队列。HTML 明确引用的同源样式表会在独立数量上限内读取并递归解析 `@import`；外域样式只记录，不主动请求。同一路径查询参数变体也受独立上限约束。资源元数据探测才会使用 HEAD。爬虫只访问完全相同的 origin，子域名视为外域；外域文件链接可以记录，但不会继续扩散，只有用户授予完整嗅探权限时才可探测其元数据。启用 robots 时，robots.txt 的 401/403 或重试后仍失败会安全停止任务。
+先显示配置，再请求当前站点权限。后台使用 GET 读取静态 HTML，并从页面链接、HTTP Link/Refresh、可选 Sitemap/Sitemap Index（支持 raw gzip）和启动时当前标签页已渲染的 SPA DOM 补充队列。HTML 明确引用的同源样式表会在独立数量上限内读取、校验响应类型并递归解析 `@import`；外域样式只记录，不主动请求。同一路径查询参数变体也受独立上限约束。资源元数据探测才会使用 HEAD。爬虫只访问完全相同的 origin，子域名视为外域；外域文件链接可以记录，但不会继续扩散，只有用户授予完整嗅探权限时才可探测其元数据。启用 robots 时，robots.txt 的 401/403 或重试后仍失败会安全停止任务。
 
 ## 权限说明
 
@@ -130,7 +130,7 @@ npm run build
 ## 数据与安全
 
 - 扫描数据不上传，不包含遥测、广告 SDK 或账户系统。
-- 网页文字只提取公开可见正文，不读取显式隐藏元素、输入框、密码、文本框、下拉选项或可编辑草稿；不执行 OCR。
+- 网页文字只提取公开可见正文，不读取显式隐藏或折叠内容、输入框、密码、文本框、下拉选项或可编辑草稿；不执行 OCR。
 - URL 在后台重新解析与验证；递归请求必须属于任务授权 origin。
 - 默认阻止本机、私网、链路本地、URL 凭据、危险端口和登出/删除/支付类路径。
 - 所有跨上下文消息由 Zod 严格验证；网页不能发送任意 URL 触发后台 fetch。
@@ -156,7 +156,7 @@ npm run package
 输出：
 
 ```text
-release/webfile-hunter-v1.8.0.zip
+release/webfile-hunter-v1.9.0.zip
 ```
 
 ZIP 根目录直接包含 `manifest.json`，可用于 Edge Add-ons 提交准备。

@@ -51,9 +51,12 @@ function inheritedFrameContext(
   return { pageUrl: frameUrl, sourcePageUrl: frameUrl.href, parentUrl: baseUrl.href };
 }
 
-export function shouldKeepPageResource(resource: RawResource): boolean {
+export function shouldKeepPageResource(
+  resource: RawResource,
+  customExtensions: ReadonlySet<string> = new Set()
+): boolean {
   return (
-    looksLikeFileUrl(resource.url) ||
+    looksLikeFileUrl(resource.url, customExtensions) ||
     Boolean(resource.mimeType) ||
     Boolean(resource.hasDownload) ||
     Boolean(resource.resourceHint) ||
@@ -70,7 +73,12 @@ export async function injectPageScanner(sessionId: string, tabId: number): Promi
     world: "ISOLATED",
     func: (
       id: string,
-      options: { includeStylesheets: boolean; includeImages: boolean; includeText: boolean }
+      options: {
+        includeStylesheets: boolean;
+        includeImages: boolean;
+        includeText: boolean;
+        customExtensions: string[];
+      }
     ) => {
       const scope = globalThis as typeof globalThis & {
         __webFileHunterInjectedSessionId?: string;
@@ -78,6 +86,7 @@ export async function injectPageScanner(sessionId: string, tabId: number): Promi
           includeStylesheets: boolean;
           includeImages: boolean;
           includeText: boolean;
+          customExtensions: string[];
         };
       };
       scope.__webFileHunterInjectedSessionId = id;
@@ -88,7 +97,8 @@ export async function injectPageScanner(sessionId: string, tabId: number): Promi
       {
         includeStylesheets: settings.scanStylesheets,
         includeImages: settings.scanImages,
-        includeText: session.config.capturePageText
+        includeText: session.config.capturePageText,
+        customExtensions: Object.keys(settings.customExtensions).slice(0, 500)
       }
     ]
   });
@@ -136,41 +146,45 @@ export async function handlePageScanResult(
       ? enqueueCrawlerPages(session, inheritedFrame?.parentUrl ?? result.pageUrl, result.pages)
       : 0;
   const settings = await getSettings();
+  const customExtensions = new Set(Object.keys(settings.customExtensions));
   const sourcePageUrl =
     inheritedFrame?.sourcePageUrl ?? (isExternalFrame ? session.startUrl : result.pageUrl);
-  const candidates = result.resources.filter(shouldKeepPageResource).flatMap((resource) => {
-    if (resource.resourceHint === "image" && !settings.scanImages) return [];
-    if (resource.source === "CSS_URL" && !settings.scanStylesheets) return [];
-    try {
-      const candidate = createFileCandidate({
-        url: resource.url,
-        source: resource.source,
-        sourcePageUrl,
-        sourcePageTitle: result.title,
-        ...(inheritedFrame
-          ? { parentUrl: inheritedFrame.parentUrl }
-          : isExternalFrame
-            ? { parentUrl: result.pageUrl }
-            : {}),
-        tabId: session.tabId,
-        ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
-        ...(resource.tagName ? { tagName: resource.tagName } : {}),
-        ...(resource.hasDownload ? { hasDownload: true } : {}),
-        ...(resource.resourceHint ? { explicitResource: true } : {}),
-        ...(resource.resourceHint === "stylesheet" ? { requestType: "stylesheet" } : {}),
-        customExtensions: settings.customExtensions,
-        customMimeTypes: settings.customMimeTypes
-      });
-      return shouldIncludeCandidate(candidate, settings) ? [candidate] : [];
-    } catch {
-      return [];
-    }
-  });
+  const textPageUrl = inheritedFrame?.sourcePageUrl ?? result.pageUrl;
+  const candidates = result.resources
+    .filter((resource) => shouldKeepPageResource(resource, customExtensions))
+    .flatMap((resource) => {
+      if (resource.resourceHint === "image" && !settings.scanImages) return [];
+      if (resource.source === "CSS_URL" && !settings.scanStylesheets) return [];
+      try {
+        const candidate = createFileCandidate({
+          url: resource.url,
+          source: resource.source,
+          sourcePageUrl,
+          sourcePageTitle: result.title,
+          ...(inheritedFrame
+            ? { parentUrl: inheritedFrame.parentUrl }
+            : isExternalFrame
+              ? { parentUrl: result.pageUrl }
+              : {}),
+          tabId: session.tabId,
+          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          ...(resource.tagName ? { tagName: resource.tagName } : {}),
+          ...(resource.hasDownload ? { hasDownload: true } : {}),
+          ...(resource.resourceHint ? { explicitResource: true } : {}),
+          ...(resource.resourceHint === "stylesheet" ? { requestType: "stylesheet" } : {}),
+          customExtensions: settings.customExtensions,
+          customMimeTypes: settings.customMimeTypes
+        });
+        return shouldIncludeCandidate(candidate, settings) ? [candidate] : [];
+      } catch {
+        return [];
+      }
+    });
   const stored = await putFiles(sessionId, candidates);
   if (stored.length) broadcast({ type: "FILES_DISCOVERED", payload: { sessionId, files: stored } });
   if (!liveBatch && session.config.capturePageText && result.text?.content) {
     const document = await putPageText(sessionId, {
-      pageUrl: sourcePageUrl,
+      pageUrl: textPageUrl,
       title: result.title,
       content: result.text.content,
       ...(result.text.language ? { language: result.text.language } : {}),

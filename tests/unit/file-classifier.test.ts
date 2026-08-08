@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyFile } from "@/core/file-classifier";
+import { classifyFile, looksLikeFileUrl } from "@/core/file-classifier";
 
 describe("classifyFile", () => {
   it.each([
@@ -152,6 +152,11 @@ describe("classifyFile", () => {
         category: "archive"
       });
     }
+  });
+
+  it("把 name 查询文件名和自定义扩展名识别为文件 URL", () => {
+    expect(looksLikeFileUrl("https://e.test/get?name=manual.pdf")).toBe(true);
+    expect(looksLikeFileUrl("https://e.test/models/scene.meshx", new Set(["meshx"]))).toBe(true);
   });
 
   it("非法百分号编码不会破坏路径文件名识别", () => {

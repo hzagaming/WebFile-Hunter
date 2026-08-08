@@ -68,4 +68,17 @@ describe("TextPage", () => {
     await user.click(screen.getByRole("button", { name: "导出 TXT" }));
     await waitFor(() => expect(mocks.saveExport).toHaveBeenCalled());
   });
+
+  it("非 HTTP 页面不显示无法执行的重新提取入口", () => {
+    render(
+      <TextPage
+        snapshot={appSnapshot({
+          activeTab: { id: 1, url: "edge://settings/", title: "设置", origin: "null" }
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /重新扫描|重新提取/ })).not.toBeInTheDocument();
+  });
 });

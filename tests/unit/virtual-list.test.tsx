@@ -66,4 +66,21 @@ describe("VirtualList", () => {
 
     expect(region.scrollTop).toBe(64);
   });
+
+  it("子控件处理方向键时不触发列表滚动", () => {
+    render(
+      <VirtualList
+        items={["一", "二", "三"]}
+        itemHeight={40}
+        height={80}
+        getKey={(item) => item}
+        renderItem={(item) => <button type="button">{item}</button>}
+      />
+    );
+    const region = screen.getByRole("region", { name: "扫描结果列表" });
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "一" }), { key: "ArrowDown" });
+
+    expect(region.scrollTop).toBe(0);
+  });
 });

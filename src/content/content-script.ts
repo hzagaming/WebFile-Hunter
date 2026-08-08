@@ -5,7 +5,12 @@ import { extractPageText } from "./page-text-extractor";
 
 interface ContentState {
   sessionId: string;
-  options: { includeStylesheets: boolean; includeImages: boolean; includeText: boolean };
+  options: {
+    includeStylesheets: boolean;
+    includeImages: boolean;
+    includeText: boolean;
+    customExtensions: string[];
+  };
   monitor?: ContentMonitor;
 }
 
@@ -17,6 +22,7 @@ const scope = globalThis as typeof globalThis & {
     includeStylesheets: boolean;
     includeImages: boolean;
     includeText: boolean;
+    customExtensions: string[];
   };
 };
 
@@ -52,7 +58,8 @@ if (typeof injectedSessionId === "string") {
     options: scope.__webFileHunterInjectedOptions ?? {
       includeStylesheets: true,
       includeImages: true,
-      includeText: true
+      includeText: true,
+      customExtensions: []
     }
   };
   state.sessionId = injectedSessionId;

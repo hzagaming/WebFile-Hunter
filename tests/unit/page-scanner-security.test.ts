@@ -118,6 +118,32 @@ describe("handlePageScanResult security", () => {
     );
   });
 
+  it("跨域 frame 正文使用自身 URL 保存，避免覆盖主页面文字", async () => {
+    mocks.getSession.mockResolvedValue(scanSession({ status: "running", mode: "live_monitor" }));
+    mocks.hasAllSitesPermission.mockResolvedValue(true);
+
+    await handlePageScanResult(
+      "session-fixture",
+      {
+        pageUrl: "https://frame.test/article",
+        title: "frame",
+        resources: [],
+        pages: [],
+        text: { content: "跨域 Frame 公开正文", truncated: false }
+      },
+      { tab: { id: 1 } } as chrome.runtime.MessageSender,
+      false
+    );
+
+    expect(mocks.putPageText).toHaveBeenCalledWith(
+      "session-fixture",
+      expect.objectContaining({
+        pageUrl: "https://frame.test/article",
+        content: "跨域 Frame 公开正文"
+      })
+    );
+  });
+
   it("保留显式资源提示并提升无扩展名结果置信度", async () => {
     mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
 
@@ -142,6 +168,41 @@ describe("handlePageScanResult security", () => {
     );
 
     expect(mocks.putFiles.mock.calls[0]?.[1][0]).toMatchObject({ confidence: 70 });
+  });
+
+  it("让内容脚本发现的自定义扩展名普通链接通过后台过滤并入库", async () => {
+    mocks.getSettings.mockResolvedValue({
+      ...structuredClone(DEFAULT_SETTINGS),
+      customExtensions: { meshx: "model" }
+    });
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+
+    await expect(
+      handlePageScanResult(
+        "session-fixture",
+        {
+          pageUrl: "https://example.test/page",
+          title: "page",
+          resources: [
+            {
+              url: "https://example.test/models/scene.meshx",
+              source: "DOM_ATTRIBUTE",
+              tagName: "a",
+              isExternal: false
+            }
+          ],
+          pages: []
+        },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        false
+      )
+    ).resolves.toBe(1);
+
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toMatchObject({
+      filename: "scene.meshx",
+      extension: "meshx",
+      category: "model"
+    });
   });
 
   it("已授予完整权限时当前页扫描也接受跨域 frame", async () => {

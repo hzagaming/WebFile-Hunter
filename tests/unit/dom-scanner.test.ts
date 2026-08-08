@@ -350,4 +350,25 @@ describe("scanDocument", () => {
     expect(result.resources).toHaveLength(20_000);
     expect(result.resources.some((item) => item.url.length > 16_384)).toBe(false);
   });
+
+  it("保留 srcset URL 内部逗号并发现自定义扩展名链接", () => {
+    document.body.innerHTML = `
+      <img srcset="/render/chart,wide.webp 2x, /fallback.webp 1x">
+      <a href="/models/scene.meshx">模型</a>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    const result = scanDocument({
+      includeStylesheets: false,
+      customExtensions: ["meshx"]
+    });
+
+    expect(result.resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/render/chart,wide.webp`,
+        `${location.origin}/fallback.webp`,
+        `${location.origin}/models/scene.meshx`
+      ])
+    );
+  });
 });

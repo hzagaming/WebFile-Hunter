@@ -886,6 +886,7 @@ export function ResultsPage({ snapshot, refresh }: Props) {
         <label>
           <input
             type="checkbox"
+            disabled={busy}
             checked={Boolean(filtered.length) && filtered.every((file) => selected.has(file.id))}
             onChange={(e) => {
               setSelected((current) => {

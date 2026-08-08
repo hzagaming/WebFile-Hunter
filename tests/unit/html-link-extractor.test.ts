@@ -170,6 +170,25 @@ describe("extractLinksFromHtml", () => {
     );
   });
 
+  it("保留 srcset URL 内部逗号并识别自定义扩展名链接", () => {
+    const result = extractLinksFromHtml(
+      '<img srcset="/render/chart,wide.webp 2x, /fallback.webp 1x"><a href="/models/scene.meshx">模型</a>',
+      "https://example.test/article",
+      new Set(["meshx"])
+    );
+
+    expect(result.resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/render/chart,wide.webp",
+        "https://example.test/fallback.webp",
+        "https://example.test/models/scene.meshx"
+      ])
+    );
+    expect(result.pages.map((item) => item.url)).not.toContain(
+      "https://example.test/models/scene.meshx"
+    );
+  });
+
   it("从静态 HTML 发现高清、回退、缩放与原图属性", () => {
     const result = extractLinksFromHtml(
       `<img data-full="/full.webp" data-full-src="/full-src.avif"

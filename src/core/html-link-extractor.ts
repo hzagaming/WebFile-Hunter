@@ -10,6 +10,7 @@ import {
   robotsMetaNoFollow
 } from "./html-resource-policy";
 import { extractStructuredDataResources } from "./structured-data-resources";
+import { extractSrcsetUrls } from "./srcset-parser";
 import { normalizeUrl, sameOrigin } from "./url-normalizer";
 import type { RawResource } from "@/types/scanner";
 import type { ExtractedHtmlLinks, PageCandidate } from "@/types/scanner";
@@ -145,13 +146,6 @@ function textContent(node: Node): string {
   return node.childNodes.map(textContent).join("");
 }
 
-function srcsetUrls(value: string): string[] {
-  return value
-    .split(",")
-    .map((entry) => entry.trim().split(/\s+/, 1)[0])
-    .filter((url): url is string => Boolean(url));
-}
-
 function inlineStyleHidden(style: string): boolean {
   const declarations = new Map(
     style.split(";").flatMap((declaration) => {
@@ -240,7 +234,11 @@ function extractStaticText(document: Node, elements: readonly Element[]) {
   return { content, ...(language ? { language } : {}), truncated };
 }
 
-export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHtmlLinks {
+export function extractLinksFromHtml(
+  html: string,
+  pageUrl: string,
+  customExtensions: ReadonlySet<string> = new Set()
+): ExtractedHtmlLinks {
   const document = parse(html);
   const elements: Element[] = [];
   const walk = (node: Node): void => {
@@ -277,7 +275,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     attribute?: string,
     resourceHint?: RawResource["resourceHint"]
   ): void => {
-    const values = attribute === "srcset" ? srcsetUrls(raw) : [raw];
+    const values = attribute === "srcset" ? extractSrcsetUrls(raw) : [raw];
     for (const value of values) {
       try {
         const url = normalizeUrl(value, baseUrl).canonicalUrl;
@@ -353,7 +351,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
           const explicitResource =
             resourceMimeHint(attrs.get("type")) ||
             Boolean(metaResourceKind({ itemprop: attrs.get("itemprop") }));
-          if (looksLikeFileUrl(url) || kind === "resource" || explicitResource) {
+          if (looksLikeFileUrl(url, customExtensions) || kind === "resource" || explicitResource) {
             addResource(
               href,
               "CRAWLED_PAGE",
@@ -400,7 +398,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
     ])) {
       const raw = attrs.get(attrName);
       if (!raw) continue;
-      const values = ["srcset", "data-srcset"].includes(attrName) ? srcsetUrls(raw) : [raw];
+      const values = ["srcset", "data-srcset"].includes(attrName) ? extractSrcsetUrls(raw) : [raw];
       for (const value of values) {
         let normalized: string;
         try {
@@ -410,7 +408,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
         }
         const isPageContainer = element.tagName === "iframe" || element.tagName === "frame";
         const isAnchor = ["a", "area", "form"].includes(element.tagName);
-        if (looksLikeFileUrl(normalized) || (!isAnchor && !isPageContainer)) {
+        if (looksLikeFileUrl(normalized, customExtensions) || (!isAnchor && !isPageContainer)) {
           addResource(
             value,
             attrs.has("download") ? "DOWNLOAD_ATTRIBUTE" : "CRAWLED_PAGE",
@@ -447,7 +445,7 @@ export function extractLinksFromHtml(html: string, pageUrl: string): ExtractedHt
         const explicitResource =
           resourceMimeHint(attrs.get("type")) ||
           Boolean(metaResourceKind({ itemprop: attrs.get("itemprop") }));
-        if (looksLikeFileUrl(url) || attrs.has("download") || explicitResource) {
+        if (looksLikeFileUrl(url, customExtensions) || attrs.has("download") || explicitResource) {
           addResource(
             raw,
             attrs.has("download") ? "DOWNLOAD_ATTRIBUTE" : "CRAWLED_PAGE",

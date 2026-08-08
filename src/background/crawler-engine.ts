@@ -314,6 +314,20 @@ function isStylesheetResource(
   }
 }
 
+function isCssResponseMime(mimeType: string | undefined): boolean {
+  return (
+    mimeType === undefined ||
+    [
+      "text/css",
+      "text/x-css",
+      "text/plain",
+      "application/css",
+      "application/x-css",
+      "application/octet-stream"
+    ].includes(mimeType)
+  );
+}
+
 async function scanStylesheets(
   session: ScanSession,
   pageTitle: string,
@@ -355,7 +369,7 @@ async function scanStylesheets(
         ?.split(";", 1)[0]
         ?.trim()
         .toLowerCase();
-      if (isHtmlMime(responseMime)) {
+      if (isHtmlMime(responseMime) || !isCssResponseMime(responseMime)) {
         await response.body?.cancel();
         return;
       }
@@ -421,6 +435,8 @@ async function processPage(
     throw new TypeError(`页面请求失败（HTTP ${response.status}）。`);
   }
   const metadata = metadataFromResponse(item.url, response);
+  const settings = await getSettings();
+  const customExtensions = new Set(Object.keys(settings.customExtensions));
   const headerLinks = extractHttpLinkHeader(
     response.headers.get("link") ?? undefined,
     metadata.finalUrl
@@ -430,11 +446,11 @@ async function processPage(
     metadata.finalUrl
   );
   const shouldParseHtml =
-    isHtmlMime(metadata.mimeType) || (!metadata.mimeType && !looksLikeFileUrl(item.url));
+    isHtmlMime(metadata.mimeType) ||
+    (!metadata.mimeType && !looksLikeFileUrl(item.url, customExtensions));
   if (!shouldParseHtml) {
     await response.body?.cancel();
     await recordCandidates(session, metadata.finalUrl, "", headerLinks.resources, active);
-    const settings = await getSettings();
     const candidate = createFileCandidate({
       url: item.url,
       finalUrl: metadata.finalUrl,
@@ -457,7 +473,7 @@ async function processPage(
   }
   const html = await readLimitedText(response, session.config.maxHtmlBytes);
   const finalUrl = metadata.finalUrl;
-  const extracted = extractLinksFromHtml(html, finalUrl);
+  const extracted = extractLinksFromHtml(html, finalUrl, customExtensions);
   const resources = new Map(
     [...extracted.resources, ...headerLinks.resources].map((resource) => [resource.url, resource])
   );

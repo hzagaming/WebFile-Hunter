@@ -553,7 +553,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 setSettings({ ...settings, confirmBeforeDownload: e.target.checked })
               }
             />
-            批量下载前确认
+            下载前确认（单项与批量）
           </label>
           <label>
             <input

@@ -97,6 +97,39 @@ describe("ScannerPage", () => {
     expect(screen.getByLabelText("样式表抓取上限")).toHaveValue(100);
   });
 
+  it("递归入口关联自身配置且其他启动请求期间禁止重复启动", async () => {
+    const user = userEvent.setup();
+    let resolvePermission: ((granted: boolean) => void) | undefined;
+    mocks.requestPermission.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => (resolvePermission = resolve))
+    );
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://example.test/page",
+            title: "Example",
+            origin: "https://example.test"
+          }
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
+
+    const recursive = screen.getByRole("button", { name: /同域递归扫描/ });
+    const monitor = screen.getByRole("button", { name: /开始完整嗅探/ });
+    expect(recursive).toHaveAttribute("aria-controls", "crawl-config");
+    expect(monitor).not.toHaveAttribute("aria-controls");
+    await user.click(recursive);
+    expect(recursive).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(monitor);
+    expect(screen.getByRole("button", { name: "确认并请求当前站点权限" })).toBeDisabled();
+    resolvePermission?.(false);
+  });
+
   it("从侧栏扫描当前页时先请求当前站点权限", async () => {
     const user = userEvent.setup();
     const created = scanSession({ id: "created-session", status: "running" });

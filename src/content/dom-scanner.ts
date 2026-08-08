@@ -9,6 +9,7 @@ import {
 } from "@/core/html-resource-policy";
 import { extractStructuredDataResources } from "@/core/structured-data-resources";
 import { normalizeUrl } from "@/core/url-normalizer";
+import { extractSrcsetUrls } from "@/core/srcset-parser";
 import type { PageCandidate, PageScanResult, RawResource } from "@/types/scanner";
 import { extractCssUrls, scanAccessibleStylesheets } from "./style-url-scanner";
 import { scanPerformanceEntries } from "./performance-scanner";
@@ -71,13 +72,6 @@ const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ]
 ];
 
-function splitSrcset(value: string): string[] {
-  return value
-    .split(",")
-    .map((part) => part.trim().split(/\s+/, 1)[0])
-    .filter((url): url is string => Boolean(url));
-}
-
 function normalize(raw: string): string | undefined {
   try {
     const parsed = new URL(raw, document.baseURI);
@@ -94,11 +88,13 @@ export function scanDocument(
     includePerformance?: boolean;
     includeStylesheets?: boolean;
     includeImages?: boolean;
+    customExtensions?: readonly string[];
   } = {}
 ): PageScanResult {
   const resources = new Map<string, RawResource>();
   const pages = new Map<string, PageCandidate>();
   const pageOrigin = location.origin;
+  const customExtensions = new Set(options.customExtensions ?? []);
   const roots = discoverScanRoots();
   const queryAll = <T extends Element>(selector: string): T[] =>
     roots.flatMap((root) => [...root.querySelectorAll<T>(selector)]);
@@ -146,7 +142,9 @@ export function scanDocument(
         if (resourceHint === "image" && options.includeImages === false) continue;
         const raw = element.getAttribute(attribute);
         if (!raw) continue;
-        const values = ["srcset", "data-srcset"].includes(attribute) ? splitSrcset(raw) : [raw];
+        const values = ["srcset", "data-srcset"].includes(attribute)
+          ? extractSrcsetUrls(raw)
+          : [raw];
         for (const value of values) {
           const url = normalize(value);
           if (!url) continue;
@@ -157,7 +155,11 @@ export function scanDocument(
               Boolean(
                 metaResourceKind({ itemprop: element.getAttribute("itemprop") ?? undefined })
               );
-            if (looksLikeFileUrl(url) || kind === "resource" || explicitResource) {
+            if (
+              looksLikeFileUrl(url, customExtensions) ||
+              kind === "resource" ||
+              explicitResource
+            ) {
               addResource(value, element, attribute, "DOM_ATTRIBUTE", resourceHint);
             } else if (kind === "page" && pages.size < MAX_ITEMS && !pages.has(url)) {
               pages.set(url, { url, tagName: "link", noFollow: pageNoFollow });
@@ -171,7 +173,12 @@ export function scanDocument(
           const explicitResource =
             resourceMimeHint(element.getAttribute("type") ?? undefined) ||
             Boolean(metaResourceKind({ itemprop: element.getAttribute("itemprop") ?? undefined }));
-          if (!pageElement || looksLikeFileUrl(url) || downloadable || explicitResource) {
+          if (
+            !pageElement ||
+            looksLikeFileUrl(url, customExtensions) ||
+            downloadable ||
+            explicitResource
+          ) {
             addResource(value, element, attribute, "DOM_ATTRIBUTE", resourceHint);
           } else if (pages.size < MAX_ITEMS && !pages.has(url)) {
             pages.set(url, {
