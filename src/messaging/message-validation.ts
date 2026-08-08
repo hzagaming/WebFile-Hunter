@@ -9,6 +9,7 @@ const scanConfig = z
     maxDepth: z.number().int().min(0).max(5),
     maxPages: z.number().int().min(1).max(2000),
     maxQueryVariantsPerPath: z.number().int().min(1).max(50),
+    maxStylesheets: z.number().int().min(1).max(500),
     maxConcurrency: z.number().int().min(1).max(6),
     minDelayMs: z.number().int().min(500),
     requestTimeoutMs: z.number().int().min(1000).max(120_000),
@@ -44,7 +45,7 @@ const rawResource = z
     attribute: z.string().max(64).optional(),
     mimeType: z.string().max(256).optional(),
     hasDownload: z.boolean().optional(),
-    resourceHint: z.enum(["image", "resource"]).optional(),
+    resourceHint: z.enum(["image", "resource", "stylesheet"]).optional(),
     isExternal: z.boolean()
   })
   .strict();
@@ -97,6 +98,7 @@ const settings = z
         "data",
         "code",
         "font",
+        "model",
         "unknown"
       ])
     ),
@@ -114,6 +116,7 @@ const settings = z
         "data",
         "code",
         "font",
+        "model",
         "unknown"
       ])
     ),

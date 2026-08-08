@@ -157,6 +157,7 @@ export async function handlePageScanResult(
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
         ...(resource.hasDownload ? { hasDownload: true } : {}),
         ...(resource.resourceHint ? { explicitResource: true } : {}),
+        ...(resource.resourceHint === "stylesheet" ? { requestType: "stylesheet" } : {}),
         customExtensions: settings.customExtensions,
         customMimeTypes: settings.customMimeTypes
       });

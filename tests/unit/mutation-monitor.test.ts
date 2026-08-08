@@ -46,7 +46,16 @@ describe("startContentMonitor", () => {
         "data-video",
         "data-poster",
         "data-original",
-        "lazy-src"
+        "lazy-src",
+        "data-full",
+        "data-full-src",
+        "data-original-src",
+        "data-src-retina",
+        "data-fallback-src",
+        "data-zoom-image",
+        "data-large",
+        "data-large-file",
+        "data-orig-file"
       ])
     );
     monitor.stop();

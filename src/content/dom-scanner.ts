@@ -39,7 +39,7 @@ const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
   ["input", ["src"]],
   ["form", ["action"]],
   [
-    "[data-src],[data-srcset],[data-url],[data-href],[data-download],[data-file],[data-file-url],[data-audio],[data-video],[data-poster],[data-original],[data-lazy-src],[lazy-src],[data-bg],[data-background],[data-image],[data-thumb]",
+    "[data-src],[data-srcset],[data-url],[data-href],[data-download],[data-file],[data-file-url],[data-audio],[data-video],[data-poster],[data-original],[data-lazy-src],[lazy-src],[data-bg],[data-background],[data-image],[data-thumb],[data-full],[data-full-src],[data-original-src],[data-src-retina],[data-fallback-src],[data-zoom-image],[data-large],[data-large-file],[data-orig-file]",
     [
       "data-src",
       "data-srcset",
@@ -57,7 +57,16 @@ const SELECTORS: ReadonlyArray<[string, readonly string[]]> = [
       "data-bg",
       "data-background",
       "data-image",
-      "data-thumb"
+      "data-thumb",
+      "data-full",
+      "data-full-src",
+      "data-original-src",
+      "data-src-retina",
+      "data-fallback-src",
+      "data-zoom-image",
+      "data-large",
+      "data-large-file",
+      "data-orig-file"
     ]
   ]
 ];

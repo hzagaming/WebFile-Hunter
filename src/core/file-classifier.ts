@@ -33,12 +33,33 @@ export interface ClassificationResult {
 function filenameFromUrl(raw: string): { filename: string; queryFilename: boolean } {
   try {
     const url = new URL(raw);
-    for (const key of ["filename", "file", "download", "name"]) {
+    for (const key of ["response-content-disposition", "content-disposition"]) {
+      const value = url.searchParams.get(key);
+      const filename = parseContentDispositionFilename(value ?? undefined);
+      if (filename && getExtension(filename)) {
+        return { filename: sanitizeFilename(filename), queryFilename: true };
+      }
+    }
+    for (const key of [
+      "filename",
+      "file",
+      "file_name",
+      "download",
+      "download_name",
+      "attachment",
+      "name"
+    ]) {
       const value = url.searchParams.get(key);
       if (value && getExtension(value))
         return { filename: sanitizeFilename(value), queryFilename: true };
     }
-    const pathName = decodeURIComponent(url.pathname.split("/").at(-1) ?? "");
+    const rawPathName = url.pathname.split("/").at(-1) ?? "";
+    let pathName = rawPathName;
+    try {
+      pathName = decodeURIComponent(rawPathName);
+    } catch {
+      // 保留无法解码的原始路径段，仍可识别其文件扩展名。
+    }
     return {
       filename: sanitizeFilename(pathName || `download-${Date.now()}`),
       queryFilename: false
@@ -73,7 +94,9 @@ export function classifyFile(input: ClassificationInput): ClassificationResult {
   const extension = getExtension(filename);
   let extensionCategory = extension
     ? (input.customExtensions?.[extension] ?? EXTENSION_CATEGORY.get(extension))
-    : undefined;
+    : input.requestType === "stylesheet"
+      ? "code"
+      : undefined;
   const mediaContext =
     input.requestType === "media" || ["audio", "video", "source"].includes(input.tagName ?? "");
   if (extension === "ts") extensionCategory = mediaContext ? "video" : "code";
@@ -128,11 +151,17 @@ export function looksLikeFileUrl(raw: string): boolean {
     const extension = getExtension(url.pathname);
     if (extension && (EXTENSION_CATEGORY.has(extension) || STREAM_EXTENSIONS.has(extension)))
       return true;
-    return ["filename", "file", "download"].some((key) => {
-      const value = url.searchParams.get(key);
-      const queryExtension = value ? getExtension(value) : undefined;
-      return Boolean(queryExtension && EXTENSION_CATEGORY.has(queryExtension));
-    });
+    for (const key of ["response-content-disposition", "content-disposition"]) {
+      const filename = parseContentDispositionFilename(url.searchParams.get(key) ?? undefined);
+      if (filename && EXTENSION_CATEGORY.has(getExtension(filename) ?? "")) return true;
+    }
+    return ["filename", "file", "file_name", "download", "download_name", "attachment"].some(
+      (key) => {
+        const value = url.searchParams.get(key);
+        const queryExtension = value ? getExtension(value) : undefined;
+        return Boolean(queryExtension && EXTENSION_CATEGORY.has(queryExtension));
+      }
+    );
   } catch {
     return false;
   }

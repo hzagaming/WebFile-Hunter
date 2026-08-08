@@ -1,4 +1,5 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
+import { extractCssImports, extractCssUrls } from "@/core/css-url-extractor";
 import { looksLikeFileUrl } from "@/core/file-classifier";
 import { extractLinksFromHtml } from "@/core/html-link-extractor";
 import { extractHttpLinkHeader } from "@/core/http-link-header";
@@ -40,6 +41,7 @@ interface ActiveCrawl {
   limiter: OriginRateLimiter;
   queue?: CrawlerQueue;
   visited?: Set<string>;
+  stylesheets: Set<string>;
   inFlight: CrawlQueueItem[];
   currentUrl?: string;
   requestTimes: number[];
@@ -250,7 +252,6 @@ async function recordCandidates(
   const settings = await getSettings();
   const candidates = [];
   for (const resource of resources) {
-    if (resource.resourceHint === "image" && !settings.scanImages) continue;
     if (resource.source === "CSS_URL" && !settings.scanStylesheets) continue;
     let metadata;
     if (session.config.probeMetadata && !resource.isExternal) {
@@ -276,6 +277,7 @@ async function recordCandidates(
         ...(resource.tagName ? { tagName: resource.tagName } : {}),
         ...(resource.hasDownload ? { hasDownload: true } : {}),
         ...(resource.resourceHint ? { explicitResource: true } : {}),
+        ...(resource.resourceHint === "stylesheet" ? { requestType: "stylesheet" } : {}),
         ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
         ...(metadata?.finalUrl ? { finalUrl: metadata.finalUrl } : {}),
         ...(metadata?.mimeType ? { mimeType: metadata.mimeType } : {}),
@@ -289,6 +291,7 @@ async function recordCandidates(
         customExtensions: settings.customExtensions,
         customMimeTypes: settings.customMimeTypes
       });
+      if (candidate.category === "image" && !settings.scanImages) continue;
       if (shouldIncludeCandidate(candidate, settings)) candidates.push(candidate);
     } catch {
       // URL 已在统一校验层被拒绝。
@@ -297,6 +300,102 @@ async function recordCandidates(
   const stored = await putFiles(session.id, candidates);
   if (stored.length)
     broadcast({ type: "FILES_DISCOVERED", payload: { sessionId: session.id, files: stored } });
+}
+
+function isStylesheetResource(
+  resource: ReturnType<typeof extractLinksFromHtml>["resources"][number]
+) {
+  if (resource.resourceHint === "stylesheet") return true;
+  if (resource.mimeType?.split(";", 1)[0]?.trim().toLowerCase() === "text/css") return true;
+  try {
+    return new URL(resource.url).pathname.toLowerCase().endsWith(".css");
+  } catch {
+    return false;
+  }
+}
+
+async function scanStylesheets(
+  session: ScanSession,
+  pageTitle: string,
+  resources: ReturnType<typeof extractLinksFromHtml>["resources"],
+  robots: RobotsRules,
+  active: ActiveCrawl
+): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.scanStylesheets) return;
+
+  const visit = async (rawUrl: string, baseUrl: string): Promise<void> => {
+    if (active.stylesheets.size >= session.config.maxStylesheets) return;
+    let stylesheetUrl: string;
+    try {
+      stylesheetUrl = normalizeUrl(rawUrl, baseUrl).canonicalUrl;
+    } catch {
+      return;
+    }
+    if (active.stylesheets.has(stylesheetUrl)) return;
+    const safety = inspectUrlSafety(stylesheetUrl, {
+      allowedOrigin: session.origin,
+      excludeDangerousActions: session.config.excludeDangerousActions
+    });
+    if (!safety.safe || !robots.isAllowed(stylesheetUrl)) return;
+    active.stylesheets.add(stylesheetUrl);
+
+    try {
+      const response = await active.limiter.run(
+        () =>
+          fetchWithRetries(stylesheetUrl, { method: "GET" }, crawlerFetchOptions(session, active)),
+        active.controller.signal
+      );
+      if (!response.ok) {
+        await response.body?.cancel();
+        return;
+      }
+      const responseMime = response.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
+      if (isHtmlMime(responseMime)) {
+        await response.body?.cancel();
+        return;
+      }
+      const css = await readLimitedText(response, session.config.maxHtmlBytes);
+      const discovered: ReturnType<typeof extractLinksFromHtml>["resources"] = [
+        {
+          url: stylesheetUrl,
+          source: "CSS_URL",
+          resourceHint: "stylesheet",
+          ...(responseMime ? { mimeType: responseMime } : {}),
+          isExternal: false
+        },
+        ...extractCssUrls(css).flatMap((raw) => {
+          try {
+            const url = normalizeUrl(raw, stylesheetUrl).canonicalUrl;
+            return [
+              {
+                url,
+                source: "CSS_URL" as const,
+                resourceHint: "resource" as const,
+                isExternal: new URL(url).origin !== session.origin
+              }
+            ];
+          } catch {
+            return [];
+          }
+        })
+      ];
+      await recordCandidates(session, stylesheetUrl, pageTitle, discovered, active);
+      for (const imported of extractCssImports(css)) {
+        await visit(imported, stylesheetUrl);
+      }
+    } catch (error) {
+      if (active.controller.signal.aborted) throw error;
+    }
+  };
+
+  for (const resource of resources) {
+    if (isStylesheetResource(resource)) await visit(resource.url, resource.url);
+  }
 }
 
 async function processPage(
@@ -363,6 +462,7 @@ async function processPage(
     [...extracted.resources, ...headerLinks.resources].map((resource) => [resource.url, resource])
   );
   await recordCandidates(session, finalUrl, extracted.title, [...resources.values()], active);
+  await scanStylesheets(session, extracted.title, [...resources.values()], robots, active);
   if (session.config.capturePageText && extracted.text?.content) {
     const document = await putPageText(session.id, {
       pageUrl: finalUrl,
@@ -414,6 +514,7 @@ async function run(
     controller,
     limiter: new OriginRateLimiter(session.config.maxConcurrency, session.config.minDelayMs),
     inFlight: [],
+    stylesheets: new Set(),
     requestTimes: [],
     progress: {
       sessionId: session.id,

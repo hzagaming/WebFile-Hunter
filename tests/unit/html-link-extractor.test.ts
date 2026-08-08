@@ -81,7 +81,22 @@ describe("extractLinksFromHtml", () => {
       "https://example.test/cover.webp",
       "https://example.test/video.mp4"
     ]);
+    expect(result.resources[0]).toMatchObject({ resourceHint: "stylesheet" });
     expect(result.pages.map((item) => item.url)).toContain("https://example.test/page-2");
+  });
+
+  it("把无扩展名的 stylesheet link 标记为可递归样式表", () => {
+    const result = extractLinksFromHtml(
+      '<link rel="stylesheet" href="/assets/theme">',
+      "https://example.test/article"
+    );
+
+    expect(result.resources).toContainEqual(
+      expect.objectContaining({
+        url: "https://example.test/assets/theme",
+        resourceHint: "stylesheet"
+      })
+    );
   });
 
   it("从静态 HTML 发现 JSON-LD、enclosure、MIME 与 itemprop 资源", () => {
@@ -151,6 +166,31 @@ describe("extractLinksFromHtml", () => {
         "https://example.test/doc.pdf",
         "https://example.test/icons.svg",
         "https://example.test/filter.png"
+      ])
+    );
+  });
+
+  it("从静态 HTML 发现高清、回退、缩放与原图属性", () => {
+    const result = extractLinksFromHtml(
+      `<img data-full="/full.webp" data-full-src="/full-src.avif"
+        data-original-src="/original.jpg" data-src-retina="/retina.jxl"
+        data-fallback-src="/fallback.png" data-zoom-image="/zoom.heic">
+       <div data-large="/large.tif" data-large-file="/large-file.png"
+        data-orig-file="/original-file.svg"></div>`,
+      "https://example.test/article"
+    );
+
+    expect(result.resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/full.webp",
+        "https://example.test/full-src.avif",
+        "https://example.test/original.jpg",
+        "https://example.test/retina.jxl",
+        "https://example.test/fallback.png",
+        "https://example.test/zoom.heic",
+        "https://example.test/large.tif",
+        "https://example.test/large-file.png",
+        "https://example.test/original-file.svg"
       ])
     );
   });

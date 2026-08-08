@@ -1,6 +1,6 @@
 import { extractCssUrls } from "@/core/css-url-extractor";
 
-export { extractCssUrls } from "@/core/css-url-extractor";
+export { extractCssImports, extractCssUrls } from "@/core/css-url-extractor";
 
 const MAX_STYLESHEETS = 1_000;
 const MAX_CSS_RULES = 20_000;

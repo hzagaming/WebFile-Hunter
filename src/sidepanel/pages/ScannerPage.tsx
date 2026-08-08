@@ -252,6 +252,17 @@ export function ScannerPage({ snapshot, refresh, openResults }: Props) {
               />
             </label>
             <label>
+              样式表抓取上限
+              <input
+                type="number"
+                min="1"
+                max="500"
+                disabled={Boolean(working)}
+                value={config.maxStylesheets}
+                onChange={(e) => setConfig({ ...config, maxStylesheets: Number(e.target.value) })}
+              />
+            </label>
+            <label>
               并发数
               <input
                 type="number"

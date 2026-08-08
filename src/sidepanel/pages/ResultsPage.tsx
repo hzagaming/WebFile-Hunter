@@ -40,7 +40,15 @@ const categoryLabels: Record<CategoryFilter, string> = {
   data: "数据",
   code: "源码",
   font: "字体",
+  model: "3D 模型",
   unknown: "未知"
+};
+
+const metadataStatusLabels: Record<FileCandidate["metadataStatus"], string> = {
+  not_requested: "未请求",
+  pending: "探测中",
+  complete: "已完成",
+  failed: "失败"
 };
 
 const sourceLabels: Record<DiscoverySource, string> = {
@@ -302,7 +310,47 @@ export function ResultsPage({ snapshot, refresh }: Props) {
   const [activeAudioId, setActiveAudioId] = useState<string>();
   const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const session = snapshot.activeSession;
-  const possibleCount = snapshot.files.filter((file) => file.confidence < 50).length;
+  const categoryCounts = useMemo(() => {
+    const counts = Object.fromEntries(
+      (Object.keys(categoryLabels) as CategoryFilter[]).map((item) => [item, 0])
+    ) as Record<CategoryFilter, number>;
+    for (const file of snapshot.files) {
+      const possible = file.confidence < 50;
+      if (possible) counts.possible += 1;
+      if (!possible || snapshot.settings.showLowConfidence) {
+        counts.all += 1;
+        counts[file.category] += 1;
+      }
+    }
+    return counts;
+  }, [snapshot.files, snapshot.settings.showLowConfidence]);
+  const hasActiveFilters = Boolean(
+    category !== "all" ||
+    search ||
+    extension ||
+    mime ||
+    source !== "all" ||
+    scope !== "all" ||
+    minConfidence ||
+    minMb ||
+    maxMb ||
+    regex ||
+    sort !== "newest"
+  );
+
+  const resetFilters = (): void => {
+    setCategory("all");
+    setSearch("");
+    setExtension("");
+    setMime("");
+    setSource("all");
+    setScope("all");
+    setMinConfidence(0);
+    setMinMb("");
+    setMaxMb("");
+    setRegex(false);
+    setSort("newest");
+  };
 
   useEffect(() => {
     const updateViewportHeight = (): void => setViewportHeight(window.innerHeight);
@@ -721,11 +769,9 @@ export function ResultsPage({ snapshot, refresh }: Props) {
             onClick={() => setCategory(item)}
           >
             {categoryLabels[item]}
-            {item === "possible" ? (
-              <span className="filter-count" aria-hidden="true">
-                {possibleCount}
-              </span>
-            ) : null}
+            <span className="filter-count" aria-hidden="true">
+              {categoryCounts[item]}
+            </span>
           </button>
         ))}
       </div>
@@ -827,6 +873,14 @@ export function ResultsPage({ snapshot, refresh }: Props) {
             </label>
           </div>
         </details>
+        {hasActiveFilters ? (
+          <div className="filter-footer">
+            <span>已启用筛选或自定义排序</span>
+            <button className="ghost" type="button" onClick={resetFilters}>
+              重置筛选
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="selection-bar">
         <label>
@@ -1112,9 +1166,25 @@ export function ResultsPage({ snapshot, refresh }: Props) {
                 <dt>MIME</dt>
                 <dd>{detailsFile.mimeType ?? "未知"}</dd>
               </div>
+              {detailsFile.originalUrl !== detailsFile.canonicalUrl ? (
+                <div className="wide">
+                  <dt>原始 URL</dt>
+                  <dd>{detailsFile.originalUrl}</dd>
+                </div>
+              ) : null}
               <div className="wide">
-                <dt>资源 URL</dt>
-                <dd>{resourceUrl(detailsFile)}</dd>
+                <dt>规范 URL</dt>
+                <dd>{detailsFile.canonicalUrl}</dd>
+              </div>
+              <div className="wide">
+                <dt>最终 URL</dt>
+                <dd>
+                  {detailsFile.finalUrl
+                    ? detailsFile.finalUrl === detailsFile.canonicalUrl
+                      ? "与规范 URL 相同"
+                      : detailsFile.finalUrl
+                    : "未发生重定向或尚未探测"}
+                </dd>
               </div>
               <div className="wide">
                 <dt>来源页</dt>
@@ -1123,6 +1193,30 @@ export function ResultsPage({ snapshot, refresh }: Props) {
               <div className="wide">
                 <dt>发现方式</dt>
                 <dd>{detailsFile.sources.map((item) => sourceLabels[item]).join(" + ")}</dd>
+              </div>
+              <div>
+                <dt>元数据状态</dt>
+                <dd>{metadataStatusLabels[detailsFile.metadataStatus]}</dd>
+              </div>
+              <div>
+                <dt>发现时间</dt>
+                <dd>{new Date(detailsFile.discoveredAt).toLocaleString("zh-CN")}</dd>
+              </div>
+              <div className="wide">
+                <dt>Content-Disposition</dt>
+                <dd>{detailsFile.contentDisposition ?? "未知"}</dd>
+              </div>
+              <div className="wide">
+                <dt>ETag</dt>
+                <dd>{detailsFile.etag ?? "未知"}</dd>
+              </div>
+              <div className="wide">
+                <dt>Last-Modified</dt>
+                <dd>{detailsFile.lastModified ?? "未知"}</dd>
+              </div>
+              <div className="wide">
+                <dt>Accept-Ranges</dt>
+                <dd>{detailsFile.acceptRanges ?? "未知"}</dd>
               </div>
               <div className="wide">
                 <dt>风险提示</dt>
@@ -1141,6 +1235,18 @@ export function ResultsPage({ snapshot, refresh }: Props) {
             <div className="file-details-actions">
               <button type="button" onClick={() => void copyDetail(detailsFile.filename, "文件名")}>
                 复制文件名
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyDetail(resourceUrl(detailsFile), "资源 URL")}
+              >
+                复制资源 URL
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyDetail(detailsFile.sourcePageUrl, "来源页 URL")}
+              >
+                复制来源页 URL
               </button>
               <button
                 type="button"

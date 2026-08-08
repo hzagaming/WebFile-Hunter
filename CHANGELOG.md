@@ -1,5 +1,16 @@
 # 更新记录
 
+## 1.8.0 - 2026-08-08
+
+- 同源递归扫描会主动读取静态 HTML 明确引用的同源样式表，递归解析 `@import`，并发现其中的图片、字体、源码和其他 URL；支持无 `.css` 后缀的 stylesheet link，继续遵守 robots、同源、安全 URL、限速、响应大小及新增的 1–500 样式表硬上限。
+- 新增“3D 模型”严格分类，覆盖 GLB、GLTF、OBJ、STL、FBX、DAE、3DS、PLY、USD、USDZ、3MF 与 `model/*` MIME；同步扩充现代图片、音视频、字体、字幕、归档和电子书格式。
+- MIME 识别新增 `application/*+json`、`application/*+xml` 结构化数据及更多字体、OpenDocument、电子书和归档别名，并保持 DASH、SVG 等精确 MIME 优先。
+- 文件名识别新增云存储 `response-content-disposition` / `content-disposition` 与 `file_name`、`download_name`、`attachment` 查询键；非法百分号路径不再破坏文件名和扩展名判断。
+- 当前 DOM、动态监听与递归静态 HTML 新增高清、Retina、回退、缩放、大图和原图懒加载属性，覆盖 `data-full*`、`data-original-src`、`data-src-retina`、`data-fallback-src`、`data-zoom-image`、`data-large*` 与 `data-orig-file`。
+- 结果页所有分类显示数量，新增一键重置搜索、正则、分类、扩展名、MIME、来源、范围、大小、置信度和排序；详情新增原始/规范/最终 URL、Content-Disposition、ETag、Last-Modified、Accept-Ranges、元数据状态、发现时间与独立 URL 复制。
+- 真实 Edge E2E 新增递归页面未加载 CSS 资源、3D 模型分类、计数、筛选重置与扩展详情验证，继续覆盖图片/音频实际加载、焦点闭环、真实下载和 280/320/380px 响应式界面。
+- 扩展继续完全本地运行，默认静音，不播放 SFX 或 BGM；音频只在用户点击后播放，不执行目录爆破、登录绕过或 DRM 规避。
+
 ## 1.7.0 - 2026-08-07
 
 - 新增“源码”和“字体”分类，扩充常见扩展名与 MIME；按请求语义区分 TypeScript `.ts` 与 MPEG-TS，并正确处理通用文本、二进制、ZIP 容器及 HLS/DASH 分段媒体。

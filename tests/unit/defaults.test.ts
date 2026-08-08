@@ -11,7 +11,8 @@ describe("clampScanConfig", () => {
         minDelayMs: 1,
         maxHtmlBytes: 99_999_999,
         retries: 99,
-        maxQueryVariantsPerPath: 999
+        maxQueryVariantsPerPath: 999,
+        maxStylesheets: 9999
       })
     ).toMatchObject({
       maxDepth: 5,
@@ -20,7 +21,8 @@ describe("clampScanConfig", () => {
       minDelayMs: 500,
       maxHtmlBytes: 5 * 1024 * 1024,
       retries: 3,
-      maxQueryVariantsPerPath: 50
+      maxQueryVariantsPerPath: 50,
+      maxStylesheets: 500
     });
   });
 

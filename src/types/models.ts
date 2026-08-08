@@ -10,6 +10,7 @@ export type FileCategory =
   | "data"
   | "code"
   | "font"
+  | "model"
   | "unknown";
 
 export type DiscoverySource =
@@ -62,6 +63,7 @@ export interface ScanConfig {
   maxDepth: number;
   maxPages: number;
   maxQueryVariantsPerPath: number;
+  maxStylesheets: number;
   maxConcurrency: number;
   minDelayMs: number;
   requestTimeoutMs: number;

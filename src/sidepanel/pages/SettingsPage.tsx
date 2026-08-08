@@ -32,6 +32,7 @@ function parseCustomMap(value: string): Record<string, FileCategory> {
         "data",
         "code",
         "font",
+        "model",
         "unknown"
       ].includes(category)
     )
@@ -212,6 +213,21 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                     ...settings.scan,
                     maxQueryVariantsPerPath: Number(e.target.value)
                   }
+                })
+              }
+            />
+          </label>
+          <label>
+            样式表抓取上限
+            <input
+              type="number"
+              min="1"
+              max="500"
+              value={settings.scan.maxStylesheets}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  scan: { ...settings.scan, maxStylesheets: Number(e.target.value) }
                 })
               }
             />
@@ -448,7 +464,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             rows={3}
             value={customExtensions}
             onChange={(e) => setCustomExtensions(e.target.value)}
-            placeholder="psd:image, torrent:data"
+            placeholder="psd:image, blend:model"
           />
         </label>
         <label>

@@ -53,6 +53,7 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByLabelText("同路径查询变体上限"), {
       target: { value: "12" }
     });
+    fireEvent.change(screen.getByLabelText("样式表抓取上限"), { target: { value: "240" } });
     fireEvent.change(screen.getByLabelText("请求超时（秒）"), { target: { value: "45" } });
     fireEvent.change(screen.getByLabelText("最大重定向"), { target: { value: "3" } });
     await user.click(screen.getByRole("checkbox", { name: "发现 Sitemap" }));
@@ -70,6 +71,7 @@ describe("SettingsPage", () => {
     )?.[0].payload?.settings;
     expect(saved?.scan).toMatchObject({
       maxQueryVariantsPerPath: 12,
+      maxStylesheets: 240,
       requestTimeoutMs: 45_000,
       maxRedirects: 3,
       discoverSitemaps: false,

@@ -16,6 +16,31 @@ describe("classifyFile", () => {
     expect(classifyFile({ url: `https://e.test/${filename}` }).category).toBe(category);
   });
 
+  it("不把 XHTML 文档 MIME 误识别为普通 XML 数据", () => {
+    expect(
+      classifyFile({ url: "https://e.test/page", mimeType: "application/xhtml+xml" })
+    ).toMatchObject({ category: "unknown", isDownloadable: false });
+  });
+
+  it("通过请求语义识别无扩展名样式表", () => {
+    expect(
+      classifyFile({
+        url: "https://e.test/assets/theme",
+        mimeType: "text/plain",
+        requestType: "stylesheet",
+        tagName: "link"
+      })
+    ).toMatchObject({ category: "code", confidence: 90 });
+  });
+
+  it.each([
+    ["scene.glb", "model"],
+    ["product.usdz", "model"],
+    ["mesh.stl", "model"]
+  ])("识别 3D 模型 %s", (filename, category) => {
+    expect(classifyFile({ url: `https://e.test/${filename}` }).category).toBe(category);
+  });
+
   it.each([
     ["styles.css", "code"],
     ["app.js", "code"],
@@ -110,6 +135,39 @@ describe("classifyFile", () => {
       category: "text",
       confidence: 60
     });
+  });
+
+  it("从云存储 Content-Disposition 查询参数识别文件名", () => {
+    expect(
+      classifyFile({
+        url: "https://storage.test/object?id=1&response-content-disposition=attachment%3B%20filename%3D%22report.pdf%22"
+      })
+    ).toMatchObject({ filename: "report.pdf", extension: "pdf", category: "document" });
+  });
+
+  it("从扩展下载文件名查询键识别文件", () => {
+    for (const key of ["file_name", "download_name", "attachment"]) {
+      expect(classifyFile({ url: `https://e.test/get?${key}=archive.zst` })).toMatchObject({
+        filename: "archive.zst",
+        category: "archive"
+      });
+    }
+  });
+
+  it("非法百分号编码不会破坏路径文件名识别", () => {
+    expect(classifyFile({ url: "https://e.test/files/broken%ZZ.pdf" })).toMatchObject({
+      filename: "broken%ZZ.pdf",
+      extension: "pdf",
+      category: "document"
+    });
+  });
+
+  it.each([
+    ["application/activity+json", "data"],
+    ["application/problem+xml", "data"],
+    ["model/gltf-binary", "model"]
+  ])("识别结构化与模型 MIME %s", (mimeType, category) => {
+    expect(classifyFile({ url: "https://e.test/api/resource", mimeType }).category).toBe(category);
   });
 
   it.each(["https://e.test/live/index.m3u8", "https://e.test/dash/manifest.mpd"])(

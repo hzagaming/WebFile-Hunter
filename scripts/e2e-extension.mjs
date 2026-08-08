@@ -736,6 +736,22 @@ try {
     !recursiveFiles.some((file) => file.canonicalUrl.endsWith("/files/refresh-only.txt")) ||
     !recursiveFiles.some(
       (file) =>
+        file.canonicalUrl.endsWith("/recursive-style") &&
+        file.category === "code" &&
+        file.mimeType === "text/css"
+    ) ||
+    !recursiveFiles.some(
+      (file) =>
+        file.canonicalUrl.endsWith("/files/css-recursive-only.jxl") &&
+        file.category === "image" &&
+        file.sources.includes("CSS_URL")
+    ) ||
+    !recursiveFiles.some(
+      (file) =>
+        file.canonicalUrl.endsWith("/files/recursive-only.woff2") && file.category === "font"
+    ) ||
+    !recursiveFiles.some(
+      (file) =>
         file.canonicalUrl.endsWith("/api/header-document") && file.mimeType === "application/pdf"
     ) ||
     !recursiveFiles.some(
@@ -874,8 +890,24 @@ try {
     discoveredAt: Date.now() + 5,
     updatedAt: Date.now() + 5
   };
+  const modelFile = {
+    ...currentFiles[0],
+    id: "file-e2e-model",
+    sessionId: liveSession.id,
+    originalUrl: `${server.origin}/files/scene.glb`,
+    canonicalUrl: `${server.origin}/files/scene.glb`,
+    finalUrl: `${server.origin}/files/scene.glb`,
+    filename: "classified-model.glb",
+    extension: "glb",
+    category: "model",
+    mimeType: "model/gltf-binary",
+    confidence: 100,
+    discoveredAt: Date.now() + 6,
+    updatedAt: Date.now() + 6
+  };
   await putDatabaseFile(worker, codeFile);
   await putDatabaseFile(worker, fontFile);
+  await putDatabaseFile(worker, modelFile);
 
   const extremeFilename = `${"超长文件名-".repeat(12)}fixture.extremelylongextension`;
   await putDatabaseFile(worker, {
@@ -922,6 +954,9 @@ try {
     ) ||
     !rowsWithExtreme.files.some(
       (file) => file.id === fontFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === modelFile.id && file.sessionId === liveSession.id
     )
   ) {
     throw new Error("结果页 E2E 夹具未写入实时监听会话。");
@@ -1074,6 +1109,12 @@ try {
   });
   await fontCard.locator(".file-type.type-font").waitFor();
   await assertResultCardControls(sidepanelPage, fontFile.filename, 6);
+  await sidepanelPage.getByRole("button", { name: "3D 模型", exact: true }).click();
+  const modelCard = sidepanelPage.locator(".result-card").filter({
+    has: sidepanelPage.getByTitle(modelFile.filename, { exact: true })
+  });
+  await modelCard.locator(".file-type.type-model").waitFor();
+  await assertResultCardControls(sidepanelPage, modelFile.filename, 6);
   await sidepanelPage.getByRole("button", { name: "全部", exact: true }).click();
 
   const resultSearch = sidepanelPage.getByRole("searchbox", { name: "搜索结果" });
@@ -1164,6 +1205,12 @@ try {
   await detailsDialog.waitFor({ state: "detached" });
   if (!(await detailsTrigger.evaluate((button) => button === document.activeElement))) {
     throw new Error("关闭文件详情后焦点未返回详情按钮。");
+  }
+
+  await sidepanelPage.getByRole("button", { name: "重置筛选", exact: true }).click();
+  if ((await resultSearch.inputValue()) !== "") throw new Error("重置筛选未清空搜索条件。");
+  if (await sidepanelPage.getByRole("button", { name: "重置筛选", exact: true }).count()) {
+    throw new Error("重置筛选后仍错误显示活动筛选状态。");
   }
 
   await resultSearch.fill(previewAudioFile.filename);
@@ -1370,6 +1417,7 @@ try {
   await assertResponsive(sidepanelPage, "设置页");
   await assertActiveNavigation(sidepanelPage, "设置");
   await sidepanelPage.getByLabel("同路径查询变体上限").fill("9");
+  await sidepanelPage.getByLabel("样式表抓取上限").fill("160");
   await sidepanelPage.getByLabel("请求超时（秒）").fill("30");
   await sidepanelPage.getByLabel("最大重定向").fill("2");
   await sidepanelPage.getByRole("checkbox", { name: "发现 Sitemap", exact: true }).uncheck();
@@ -1380,6 +1428,7 @@ try {
   const advancedSettings = await send(permissionPage, { type: "GET_SETTINGS" });
   if (
     advancedSettings.scan.maxQueryVariantsPerPath !== 9 ||
+    advancedSettings.scan.maxStylesheets !== 160 ||
     advancedSettings.scan.requestTimeoutMs !== 30_000 ||
     advancedSettings.scan.maxRedirects !== 2 ||
     advancedSettings.scan.discoverSitemaps ||
@@ -1435,8 +1484,9 @@ try {
   console.log("活动标签页切换与导航上下文同步通过");
   console.log("TXT/CSV/JSON 结果导出与历史导出真实落盘通过");
   console.log("结果卡图片缩略图、音频播放暂停与时长显示通过");
-  console.log("源码/字体分类、文件详情操作与焦点闭环通过");
-  console.log("搜索归一化、多关键词完整匹配通过");
+  console.log("源码/字体/3D 模型分类、分类计数、文件详情与焦点闭环通过");
+  console.log("搜索归一化、多关键词完整匹配与筛选重置通过");
+  console.log("递归无扩展样式表、CSS @import 图片与字体发现通过");
   console.log("媒体浮层实际加载且默认不自动播放通过");
   console.log("资源新标签页打开通过");
   console.log("高级扫描设置保存与回读通过");

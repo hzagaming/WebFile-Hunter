@@ -76,6 +76,27 @@ describe("ScannerPage", () => {
     expect(screen.getByRole("button", { name: /同域递归扫描/ })).toHaveTextContent("SPA");
   });
 
+  it("递归设置公开样式表抓取上限", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScannerPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 9,
+            url: "https://example.test/page",
+            title: "Example",
+            origin: "https://example.test"
+          }
+        })}
+        refresh={vi.fn()}
+        openResults={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /同域递归扫描/ }));
+    expect(screen.getByLabelText("样式表抓取上限")).toHaveValue(100);
+  });
+
   it("从侧栏扫描当前页时先请求当前站点权限", async () => {
     const user = userEvent.setup();
     const created = scanSession({ id: "created-session", status: "running" });

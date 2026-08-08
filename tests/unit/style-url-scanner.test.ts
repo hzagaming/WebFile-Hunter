@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractCssUrls, scanAccessibleStylesheets } from "@/content/style-url-scanner";
+import {
+  extractCssImports,
+  extractCssUrls,
+  scanAccessibleStylesheets
+} from "@/content/style-url-scanner";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -31,6 +35,28 @@ describe("extractCssUrls", () => {
     expect(extractCssUrls(`url("same.png");url(same.png);url("");url(var(--asset))`)).toEqual([
       "same.png"
     ]);
+  });
+
+  it("忽略 CSS 注释中的伪资源与 import", () => {
+    const css = `
+      /* @import "commented.css"; .old { background:url("old.png") } */
+      .label::before { content: "/* not a comment */"; }
+      .live { background:url("live.webp") }
+    `;
+
+    expect(extractCssUrls(css)).toEqual(["live.webp"]);
+    expect(extractCssImports(css)).toEqual([]);
+  });
+
+  it("只提取可递归读取的 CSS import", () => {
+    expect(
+      extractCssImports(`
+        @import "base.css" layer(base);
+        @import url('./print.css') print;
+        @import url(theme.css) screen;
+        .hero { background: url("hero.webp") }
+      `)
+    ).toEqual(["base.css", "./print.css", "theme.css"]);
   });
 
   it("递归扫描 @import 并按各自样式表地址解析相对资源", () => {

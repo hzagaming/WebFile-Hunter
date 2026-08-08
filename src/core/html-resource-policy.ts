@@ -78,11 +78,12 @@ export function elementResourceHint(values: {
   rel?: string | undefined;
   as?: string | undefined;
   itemprop?: string | undefined;
-}): "image" | "resource" {
+}): "image" | "resource" | "stylesheet" {
   const tagName = values.tagName?.toLowerCase();
   const attribute = values.attribute?.toLowerCase();
   const rel = values.rel?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
   const itemKind = metaResourceKind({ itemprop: values.itemprop });
+  if (tagName === "link" && rel.includes("stylesheet")) return "stylesheet";
   return tagName === "img" ||
     tagName === "image" ||
     attribute === "poster" ||

@@ -615,6 +615,23 @@ h3 {
 .filters summary {
   cursor: pointer;
 }
+.filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+.filter-footer button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
 .selection-bar {
   display: flex;
   align-items: center;
@@ -766,6 +783,9 @@ h3 {
 }
 .type-font {
   background: #a15b31;
+}
+.type-model {
+  background: #6d4aa3;
 }
 .result-body {
   min-width: 0;

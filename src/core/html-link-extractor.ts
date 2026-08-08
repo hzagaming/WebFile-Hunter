@@ -26,7 +26,19 @@ const RESOURCE_ATTRIBUTES: Record<string, readonly string[]> = {
   track: ["src"],
   embed: ["src"],
   object: ["data"],
-  img: ["src", "srcset", "data-src", "data-original", "lazy-src"],
+  img: [
+    "src",
+    "srcset",
+    "data-src",
+    "data-original",
+    "lazy-src",
+    "data-full",
+    "data-full-src",
+    "data-original-src",
+    "data-src-retina",
+    "data-fallback-src",
+    "data-zoom-image"
+  ],
   image: ["href", "xlink:href"],
   use: ["href", "xlink:href"],
   feImage: ["href", "xlink:href"],
@@ -51,7 +63,16 @@ const DATA_ATTRIBUTES = [
   "data-bg",
   "data-background",
   "data-image",
-  "data-thumb"
+  "data-thumb",
+  "data-full",
+  "data-full-src",
+  "data-original-src",
+  "data-src-retina",
+  "data-fallback-src",
+  "data-zoom-image",
+  "data-large",
+  "data-large-file",
+  "data-orig-file"
 ];
 const OBJECT_PARAM_RESOURCE_NAMES = new Set(["file", "filename", "movie", "src", "url"]);
 

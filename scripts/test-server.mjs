@@ -54,6 +54,18 @@ export async function startTestServer() {
       response.end();
       return;
     }
+    if (url.pathname === "/recursive-style") {
+      response.writeHead(200, { "Content-Type": "text/css; charset=utf-8" });
+      response.end(
+        '@import "/nested-recursive.css"; .recursive-only{background:url("/files/css-recursive-only.jxl")}'
+      );
+      return;
+    }
+    if (url.pathname === "/nested-recursive.css") {
+      response.writeHead(200, { "Content-Type": "text/css; charset=utf-8" });
+      response.end('@font-face{src:url("/files/recursive-only.woff2")}');
+      return;
+    }
     if (hostname === "fallback.wfh.test" && url.pathname === "/robots.txt") {
       response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
       response.end("User-agent: *\n");

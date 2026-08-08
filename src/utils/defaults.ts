@@ -5,6 +5,7 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
   maxDepth: 2,
   maxPages: 200,
   maxQueryVariantsPerPath: 5,
+  maxStylesheets: 100,
   maxConcurrency: 2,
   minDelayMs: 800,
   requestTimeoutMs: 15_000,
@@ -55,6 +56,12 @@ export function clampScanConfig(input: Partial<ScanConfig>): ScanConfig {
       DEFAULT_SCAN_CONFIG.maxQueryVariantsPerPath,
       1,
       50
+    ),
+    maxStylesheets: boundedInteger(
+      input.maxStylesheets,
+      DEFAULT_SCAN_CONFIG.maxStylesheets,
+      1,
+      500
     ),
     maxConcurrency: boundedInteger(input.maxConcurrency, DEFAULT_SCAN_CONFIG.maxConcurrency, 1, 6),
     minDelayMs: boundedInteger(input.minDelayMs, DEFAULT_SCAN_CONFIG.minDelayMs, 500, 60_000),

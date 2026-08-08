@@ -550,6 +550,75 @@ describe("crawler engine lifecycle", () => {
     );
   });
 
+  it("递归读取同源样式表并发现嵌套图片与字体", async () => {
+    const responses: Record<string, { body: string; type: string }> = {
+      "https://example.test/start": {
+        body: '<title>Start</title><link rel="stylesheet" href="/assets/theme">',
+        type: "text/html"
+      },
+      "https://example.test/assets/theme": {
+        body: '@import "/nested.css"; .hero{background:url("/files/deep.jxl")}',
+        type: "text/css"
+      },
+      "https://example.test/nested.css": {
+        body: '@font-face{src:url("/files/font.woff2")}',
+        type: "text/css"
+      }
+    };
+    mocks.readLimitedText.mockImplementation((response: Response) => response.text());
+    mocks.putFiles.mockImplementation((_sessionId, candidates) => Promise.resolve([...candidates]));
+    mocks.safeFetch.mockImplementation(
+      (url: string, _init: RequestInit, options: SafeFetchOptions): Promise<Response> => {
+        options.onRequestStart?.(url);
+        const entry = responses[url];
+        return Promise.resolve(
+          entry
+            ? new Response(entry.body, {
+                status: 200,
+                headers: { "Content-Type": entry.type }
+              })
+            : new Response(null, { status: 404 })
+        );
+      }
+    );
+
+    startCrawler({
+      ...recursive,
+      status: "running",
+      startUrl: "https://example.test/start",
+      config: {
+        ...recursive.config,
+        maxStylesheets: 2,
+        probeMetadata: false,
+        minDelayMs: 0
+      }
+    });
+
+    await vi.waitFor(() =>
+      expect(mocks.finishSession).toHaveBeenCalledWith(recursive.id, "completed")
+    );
+    expect(mocks.safeFetch.mock.calls.map(([url]) => url)).toEqual(
+      expect.arrayContaining([
+        "https://example.test/assets/theme",
+        "https://example.test/nested.css"
+      ])
+    );
+    expect(mocks.putFiles.mock.calls.flatMap(([, candidates]) => candidates)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          canonicalUrl: "https://example.test/assets/theme",
+          category: "code",
+          mimeType: "text/css"
+        }),
+        expect.objectContaining({ canonicalUrl: "https://example.test/files/deep.jxl" }),
+        expect.objectContaining({
+          canonicalUrl: "https://example.test/files/font.woff2",
+          category: "font"
+        })
+      ])
+    );
+  });
+
   it("从 HTTP Refresh 响应头继续安全的同源页面", async () => {
     const refreshedUrl = "https://example.test/refreshed";
     mocks.readLimitedText.mockImplementation((response: Response) => response.text());

@@ -50,6 +50,15 @@ export function startContentMonitor(onBatch: () => void, durationMs: number): Co
       "data-background",
       "data-image",
       "data-thumb",
+      "data-full",
+      "data-full-src",
+      "data-original-src",
+      "data-src-retina",
+      "data-fallback-src",
+      "data-zoom-image",
+      "data-large",
+      "data-large-file",
+      "data-orig-file",
       "style"
     ]
   };

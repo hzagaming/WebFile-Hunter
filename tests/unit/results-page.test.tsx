@@ -219,6 +219,52 @@ describe("ResultsPage", () => {
     expect(screen.queryByText("NETWORK_HEADER")).not.toBeInTheDocument();
   });
 
+  it("所有分类标签显示准确计数并支持 3D 模型", () => {
+    const session = scanSession({ filesDiscovered: 3 });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({
+          activeSession: session,
+          files: [
+            fileCandidate("text"),
+            fileCandidate("manual", { category: "document", filename: "manual.pdf" }),
+            fileCandidate("scene", {
+              category: "model",
+              filename: "scene.glb",
+              extension: "glb"
+            })
+          ]
+        })}
+        refresh={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "全部" })).toHaveTextContent("3");
+    expect(screen.getByRole("button", { name: "文本" })).toHaveTextContent("1");
+    expect(screen.getByRole("button", { name: "文档" })).toHaveTextContent("1");
+    expect(screen.getByRole("button", { name: "3D 模型" })).toHaveTextContent("1");
+    expect(screen.getByRole("button", { name: "音频" })).toHaveTextContent("0");
+  });
+
+  it("一键重置全部活动筛选与排序", async () => {
+    const user = userEvent.setup();
+    renderResults();
+    await user.type(screen.getByRole("searchbox", { name: "搜索结果" }), "manual.pdf");
+    await user.click(screen.getByText("更多筛选与排序"));
+    await user.type(screen.getByRole("textbox", { name: "MIME" }), "application/pdf");
+    await user.selectOptions(screen.getByRole("combobox", { name: "排序" }), "name");
+
+    const reset = screen.getByRole("button", { name: "重置筛选" });
+    expect(reset).toBeEnabled();
+    await user.click(reset);
+
+    expect(screen.getByRole("searchbox", { name: "搜索结果" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "MIME" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "排序" })).toHaveValue("newest");
+    expect(screen.getByText("发现结果").parentElement).toHaveTextContent("2");
+    expect(screen.queryByRole("button", { name: "重置筛选" })).not.toBeInTheDocument();
+  });
+
   it("默认将低置信度临时资源放入独立的可能资源分类", async () => {
     const user = userEvent.setup();
     const session = scanSession({ filesDiscovered: 1 });
@@ -297,6 +343,50 @@ describe("ResultsPage", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it("文件详情展示请求元数据并可分别复制资源与来源 URL", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mocks.writeText }
+    });
+    const session = scanSession({ filesDiscovered: 1 });
+    const file = fileCandidate("metadata", {
+      originalUrl: "https://example.test/original?id=1",
+      canonicalUrl: "https://example.test/original",
+      finalUrl: "https://cdn.example.test/final.pdf",
+      contentDisposition: 'attachment; filename="final.pdf"',
+      etag: '"abc"',
+      lastModified: "Sat, 08 Aug 2026 05:00:00 GMT",
+      acceptRanges: "bytes",
+      metadataStatus: "complete",
+      discoveredAt: Date.UTC(2026, 7, 8, 5)
+    });
+    render(
+      <ResultsPage
+        snapshot={appSnapshot({ activeSession: session, files: [file] })}
+        refresh={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "详情" }));
+    const dialog = screen.getByRole("dialog");
+
+    for (const value of [
+      file.originalUrl,
+      file.finalUrl,
+      file.contentDisposition,
+      file.etag,
+      file.lastModified,
+      file.acceptRanges,
+      "已完成"
+    ]) {
+      expect(within(dialog).getByText(value!)).toBeInTheDocument();
+    }
+    await user.click(within(dialog).getByRole("button", { name: "复制资源 URL" }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenLastCalledWith(file.finalUrl));
+    await user.click(within(dialog).getByRole("button", { name: "复制来源页 URL" }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenLastCalledWith(file.sourcePageUrl));
   });
 
   it("文件详情打开链接失败时显示错误并保持弹层可用", async () => {

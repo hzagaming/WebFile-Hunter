@@ -1,7 +1,25 @@
 import type { FileCategory } from "@/types/models";
 
 const groups: Record<FileCategory, readonly string[]> = {
-  audio: ["mp3", "wav", "flac", "m4a", "aac", "ogg", "oga", "opus", "wma", "aiff"],
+  audio: [
+    "mp3",
+    "wav",
+    "flac",
+    "m4a",
+    "aac",
+    "ogg",
+    "oga",
+    "opus",
+    "wma",
+    "aiff",
+    "ac3",
+    "ec3",
+    "alac",
+    "ape",
+    "amr",
+    "mid",
+    "midi"
+  ],
   video: [
     "mp4",
     "webm",
@@ -16,17 +34,41 @@ const groups: Record<FileCategory, readonly string[]> = {
     "m2ts",
     "m3u8",
     "mpd",
-    "m4s"
+    "m4s",
+    "3gp",
+    "3g2",
+    "flv",
+    "f4v",
+    "vob",
+    "wmv",
+    "asf"
   ],
   text: ["txt", "md", "log", "rtf"],
   document: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "djvu"],
-  ebook: ["epub", "mobi", "azw", "azw3", "cbz", "cbr"],
-  archive: ["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "jar"],
-  image: ["jpg", "jpeg", "png", "webp", "gif", "svg", "avif", "bmp", "tiff"],
-  subtitle: ["srt", "vtt", "ass", "lrc"],
+  ebook: ["epub", "mobi", "azw", "azw3", "cbz", "cbr", "fb2"],
+  archive: ["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "tgz", "jar", "zst", "lz", "lz4", "cab"],
+  image: [
+    "jpg",
+    "jpeg",
+    "png",
+    "webp",
+    "gif",
+    "svg",
+    "avif",
+    "bmp",
+    "tiff",
+    "tif",
+    "ico",
+    "heic",
+    "heif",
+    "jxl",
+    "apng"
+  ],
+  subtitle: ["srt", "vtt", "ass", "ssa", "smi", "sub", "idx", "ttml", "dfxp", "lrc"],
   data: ["csv", "json", "xml", "yaml", "yml", "toml", "ini", "ndjson", "geojson", "webmanifest"],
   code: ["css", "scss", "sass", "less", "js", "mjs", "cjs", "ts", "tsx", "jsx", "wasm", "map"],
-  font: ["woff", "woff2", "ttf", "otf", "eot"],
+  font: ["woff", "woff2", "ttf", "otf", "ttc", "otc", "eot"],
+  model: ["glb", "gltf", "obj", "stl", "fbx", "dae", "3ds", "ply", "usd", "usdz", "3mf"],
   unknown: []
 };
 

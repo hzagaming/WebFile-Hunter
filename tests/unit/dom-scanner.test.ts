@@ -131,6 +131,31 @@ describe("scanDocument", () => {
     );
   });
 
+  it("发现高清、回退、缩放与原图懒加载属性", () => {
+    document.body.innerHTML = `
+      <img data-full="/full.webp" data-full-src="/full-src.avif"
+        data-original-src="/original.jpg" data-src-retina="/retina.jxl"
+        data-fallback-src="/fallback.png" data-zoom-image="/zoom.heic">
+      <div data-large="/large.tif" data-large-file="/large-file.png"
+        data-orig-file="/original-file.svg"></div>
+    `;
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+
+    expect(scanDocument({ includeStylesheets: false }).resources.map((item) => item.url)).toEqual(
+      expect.arrayContaining([
+        `${location.origin}/full.webp`,
+        `${location.origin}/full-src.avif`,
+        `${location.origin}/original.jpg`,
+        `${location.origin}/retina.jxl`,
+        `${location.origin}/fallback.png`,
+        `${location.origin}/zoom.heic`,
+        `${location.origin}/large.tif`,
+        `${location.origin}/large-file.png`,
+        `${location.origin}/original-file.svg`
+      ])
+    );
+  });
+
   it("只保留资源 link 并从资源元信息提取相对 URL", () => {
     document.head.innerHTML = `
       <link rel="canonical" href="/article">
