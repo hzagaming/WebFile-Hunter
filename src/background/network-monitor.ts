@@ -1,5 +1,5 @@
 import { createFileCandidate, shouldIncludeCandidate } from "@/core/candidate-factory";
-import { looksLikeFileUrl } from "@/core/file-classifier";
+import { hasFileUrlExtension, looksLikeFileUrl } from "@/core/file-classifier";
 import { extractHttpLinkHeader } from "@/core/http-link-header";
 import { isHtmlMime, normalizeMimeType } from "@/core/mime-map";
 import { getSession, listFiles, putFiles } from "@/database/db";
@@ -70,7 +70,7 @@ export class NetworkMonitor {
       type: details.type
     };
     this.#requests.set(details.requestId, request);
-    if (looksLikeFileUrl(details.url)) {
+    if (hasFileUrlExtension(details.url)) {
       void this.#persist(request, "NETWORK_REQUEST").catch(() => undefined);
     }
     return undefined;
@@ -174,6 +174,15 @@ export class NetworkMonitor {
     const session = await getSession(sessionId);
     if (!session || session.status !== "running" || session.tabId !== request.tabId) return;
     const settings = await getSettings();
+    const customExtensions = new Set(Object.keys(settings.customExtensions));
+    const isHeaderCandidate =
+      source === "NETWORK_HEADER" &&
+      (Boolean(request.contentDisposition) ||
+        (Boolean(request.mimeType) &&
+          !isHtmlMime(request.mimeType) &&
+          request.type !== "main_frame" &&
+          request.type !== "sub_frame"));
+    if (!looksLikeFileUrl(request.url, customExtensions) && !isHeaderCandidate) return;
     let candidate;
     try {
       candidate = createFileCandidate({

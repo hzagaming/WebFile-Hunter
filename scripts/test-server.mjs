@@ -140,6 +140,14 @@ export async function startTestServer() {
       response.end(request.method === "HEAD" ? undefined : "cross");
       return;
     }
+    if (url.pathname === "/files/live-scene.meshx") {
+      response.writeHead(200, {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Length": "4"
+      });
+      response.end(request.method === "HEAD" ? undefined : "mesh");
+      return;
+    }
     if (url.pathname === "/cross-frame") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(

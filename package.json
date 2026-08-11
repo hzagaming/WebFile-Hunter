@@ -1,6 +1,6 @@
 {
   "name": "webfile-hunter",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "private": true,
   "type": "module",
   "description": "面向 Microsoft Edge 的本地网页文件发现、分类、导出与下载扩展",

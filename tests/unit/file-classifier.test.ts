@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyFile, looksLikeFileUrl } from "@/core/file-classifier";
+import { classifyFile, hasFileUrlExtension, looksLikeFileUrl } from "@/core/file-classifier";
 
 describe("classifyFile", () => {
   it.each([
@@ -157,6 +157,12 @@ describe("classifyFile", () => {
   it("把 name 查询文件名和自定义扩展名识别为文件 URL", () => {
     expect(looksLikeFileUrl("https://e.test/get?name=manual.pdf")).toBe(true);
     expect(looksLikeFileUrl("https://e.test/models/scene.meshx", new Set(["meshx"]))).toBe(true);
+  });
+
+  it("只把带潜在文件后缀的 URL 送入自定义扩展判定", () => {
+    expect(hasFileUrlExtension("https://e.test/models/scene.meshx")).toBe(true);
+    expect(hasFileUrlExtension("https://e.test/download?name=scene.meshx")).toBe(true);
+    expect(hasFileUrlExtension("https://e.test/api/resource")).toBe(false);
   });
 
   it("非法百分号编码不会破坏路径文件名识别", () => {

@@ -8,7 +8,8 @@ import {
   listFiles,
   listPageTexts,
   listSessions,
-  putFiles
+  putFiles,
+  setFileMetadataStatus
 } from "@/database/db";
 import { getSettings, saveSettings } from "@/database/settings";
 import type { AppSnapshot, ExtensionRequest, MessageResponse } from "@/messaging/message-types";
@@ -254,13 +255,11 @@ export class MessageRouter {
         const storeStatus = async (
           metadataStatus: FileCandidate["metadataStatus"]
         ): Promise<void> => {
-          const stored = await putFiles(session.id, [
-            { ...file, metadataStatus, updatedAt: Date.now() }
-          ]);
-          if (stored.length) {
+          const stored = await setFileMetadataStatus(session.id, file.id, metadataStatus);
+          if (stored) {
             broadcast({
               type: "FILES_DISCOVERED",
-              payload: { sessionId: session.id, files: stored }
+              payload: { sessionId: session.id, files: [stored] }
             });
           }
         };

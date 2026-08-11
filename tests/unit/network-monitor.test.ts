@@ -109,6 +109,28 @@ describe("NetworkMonitor", () => {
     );
   });
 
+  it("实时网络嗅探使用自定义扩展名识别无 MIME 资源", async () => {
+    mocks.getSettings.mockResolvedValue({
+      customExtensions: { meshx: "model" },
+      customMimeTypes: {},
+      scanImages: true
+    });
+
+    beforeRequest?.({
+      ...request("https://example.test"),
+      url: "https://cdn.test/models/scene.meshx"
+    });
+
+    await vi.waitFor(() => expect(mocks.putFiles).toHaveBeenCalledTimes(1));
+    expect(mocks.putFiles.mock.calls[0]?.[1][0]).toEqual(
+      expect.objectContaining({
+        canonicalUrl: "https://cdn.test/models/scene.meshx",
+        extension: "meshx",
+        category: "model"
+      })
+    );
+  });
+
   it("网络请求始终保留完整会话页面路径而不是 initiator Origin", async () => {
     beforeRequest?.(request("https://example.test"));
     beforeRequest?.({ ...request(), requestId: "request-2" });

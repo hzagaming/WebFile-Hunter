@@ -10,7 +10,8 @@ import {
   listSessions,
   putDownload,
   putFiles,
-  putSession
+  putSession,
+  setFileMetadataStatus
 } from "@/database/db";
 import { DEFAULT_SCAN_CONFIG } from "@/utils/defaults";
 import type { ScanSession } from "@/types/models";
@@ -43,6 +44,26 @@ function file(path: string) {
 afterEach(clearDatabase);
 
 describe("history database operations", () => {
+  it("主动重探可覆盖已完成的元数据状态", async () => {
+    const storedSession = session("session-metadata");
+    const storedFile = {
+      ...file("metadata.pdf"),
+      metadataStatus: "complete" as const
+    };
+    await putSession(storedSession);
+    await putFiles(storedSession.id, [storedFile]);
+
+    await expect(
+      setFileMetadataStatus(storedSession.id, storedFile.id, "pending")
+    ).resolves.toEqual(expect.objectContaining({ metadataStatus: "pending" }));
+    await expect(setFileMetadataStatus(storedSession.id, storedFile.id, "failed")).resolves.toEqual(
+      expect.objectContaining({ metadataStatus: "failed" })
+    );
+    expect(await listFiles(storedSession.id)).toEqual([
+      expect.objectContaining({ id: storedFile.id, metadataStatus: "failed" })
+    ]);
+  });
+
   it("只删除指定任务的结果并返回剩余数量", async () => {
     const first = session("session-first");
     const second = session("session-second");

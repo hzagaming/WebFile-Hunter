@@ -166,8 +166,12 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         </button>
       </div>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
-      <div className="settings-group">
-        <h3>默认递归扫描</h3>
+      <fieldset
+        className="settings-group"
+        disabled={working}
+        aria-labelledby="settings-crawl-heading"
+      >
+        <h3 id="settings-crawl-heading">默认递归扫描</h3>
         <div className="form-grid">
           <label>
             最大深度
@@ -405,9 +409,13 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             排除危险操作 URL
           </label>
         </div>
-      </div>
-      <div className="settings-group">
-        <h3>发现与显示</h3>
+      </fieldset>
+      <fieldset
+        className="settings-group"
+        disabled={working}
+        aria-labelledby="settings-discovery-heading"
+      >
+        <h3 id="settings-discovery-heading">发现与显示</h3>
         <div className="check-grid">
           <label>
             <input
@@ -476,9 +484,13 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             placeholder="application/x-demo:unknown"
           />
         </label>
-      </div>
-      <div className="settings-group">
-        <h3>下载</h3>
+      </fieldset>
+      <fieldset
+        className="settings-group"
+        disabled={working}
+        aria-labelledby="settings-download-heading"
+      >
+        <h3 id="settings-download-heading">下载</h3>
         <div className="form-grid">
           <label>
             下载并发
@@ -564,7 +576,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             跳过未知类型
           </label>
         </div>
-      </div>
+      </fieldset>
       <div className="settings-group">
         <h3>资源访问权限</h3>
         <p>权限只用于你主动启动的任务。完整嗅探仍只处理指定标签页，不读取浏览历史。</p>

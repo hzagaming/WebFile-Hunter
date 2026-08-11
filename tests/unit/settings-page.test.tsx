@@ -92,6 +92,29 @@ describe("SettingsPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("设置写入失败");
   });
 
+  it("保存期间锁定全部设置输入以避免草稿被旧响应覆盖", async () => {
+    const user = userEvent.setup();
+    let resolveSave: ((value: unknown) => void) | undefined;
+    mocks.sendMessage.mockImplementation((message: { type: string }) => {
+      if (message.type === "GET_GRANTED_ORIGINS") return Promise.resolve([]);
+      return new Promise((resolve) => {
+        resolveSave = resolve;
+      });
+    });
+    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+
+    expect(screen.getByRole("group", { name: "默认递归扫描" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(screen.getByRole("group", { name: "默认递归扫描" })).toBeDisabled();
+    expect(screen.getByLabelText("最大深度")).toBeDisabled();
+    expect(screen.getByLabelText("自定义扩展名（扩展名:分类）")).toBeDisabled();
+    expect(screen.getByLabelText("下载并发")).toBeDisabled();
+
+    resolveSave?.(undefined);
+    await waitFor(() => expect(screen.getByLabelText("最大深度")).toBeEnabled());
+  });
+
   it("撤销网站权限前明确提示会停止对应任务", async () => {
     const user = userEvent.setup();
     mocks.sendMessage.mockImplementation((message: { type: string }) =>

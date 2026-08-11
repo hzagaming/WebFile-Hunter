@@ -436,6 +436,10 @@ h3 {
   font-size: 12px;
   line-height: 1.5;
 }
+fieldset.settings-group {
+  min-inline-size: 0;
+  margin-inline: 0;
+}
 .icon-button {
   border: 0;
   padding: 4px 8px;

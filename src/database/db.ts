@@ -173,6 +173,26 @@ export async function getFile(id: string): Promise<FileCandidate | undefined> {
   return candidate;
 }
 
+export async function setFileMetadataStatus(
+  sessionId: string,
+  fileId: string,
+  metadataStatus: FileCandidate["metadataStatus"]
+): Promise<FileCandidate | undefined> {
+  const database = await getDatabase();
+  const transaction = database.transaction("files", "readwrite");
+  const row = await transaction.store.get(fileId);
+  if (!row || row.sessionId !== sessionId) {
+    await transaction.done;
+    return undefined;
+  }
+  const updated = { ...row, metadataStatus, updatedAt: Date.now() };
+  await transaction.store.put(updated);
+  await transaction.done;
+  const { sessionId: storedSessionId, ...candidate } = updated;
+  void storedSessionId;
+  return candidate;
+}
+
 function publicPageText(row: StoredPageText): PageTextDocument {
   const { sessionId, ...document } = row;
   void sessionId;

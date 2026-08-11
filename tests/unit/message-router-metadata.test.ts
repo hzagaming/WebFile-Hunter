@@ -14,14 +14,23 @@ const mocks = vi.hoisted(() => ({
   listFiles: vi.fn(),
   probeUrlMetadata: vi.fn(),
   putFiles:
-    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>()
+    vi.fn<(sessionId: string, candidates: readonly FileCandidate[]) => Promise<FileCandidate[]>>(),
+  setFileMetadataStatus:
+    vi.fn<
+      (
+        sessionId: string,
+        candidateId: string,
+        status: FileCandidate["metadataStatus"]
+      ) => Promise<FileCandidate | undefined>
+    >()
 }));
 
 vi.mock("@/database/db", () => ({
   getFile: mocks.getFile,
   getSession: mocks.getSession,
   listFiles: mocks.listFiles,
-  putFiles: mocks.putFiles
+  putFiles: mocks.putFiles,
+  setFileMetadataStatus: mocks.setFileMetadataStatus
 }));
 vi.mock("@/database/settings", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
@@ -75,6 +84,9 @@ beforeEach(() => {
     mimeType: "application/pdf"
   });
   mocks.putFiles.mockResolvedValue([candidate]);
+  mocks.setFileMetadataStatus.mockImplementation((_sessionId, _candidateId, metadataStatus) =>
+    Promise.resolve({ ...candidate, metadataStatus })
+  );
   globalThis.chrome = {
     runtime: {
       id: "extension-id",
@@ -144,7 +156,11 @@ describe("MessageRouter metadata probe", () => {
 
     expect(response.ok).toBe(true);
     const persisted = mocks.putFiles.mock.calls.flatMap(([, candidates]) => candidates);
-    expect(persisted).toContainEqual(expect.objectContaining({ metadataStatus: "pending" }));
+    expect(mocks.setFileMetadataStatus).toHaveBeenCalledWith(
+      "session-fixture",
+      candidate.id,
+      "pending"
+    );
     expect(persisted).toContainEqual(
       expect.objectContaining({ category: "model", metadataStatus: "complete" })
     );
@@ -168,9 +184,38 @@ describe("MessageRouter metadata probe", () => {
     });
 
     expect(response.ok).toBe(false);
-    expect(mocks.putFiles.mock.calls.flatMap(([, candidates]) => candidates)).toContainEqual(
-      expect.objectContaining({ metadataStatus: "failed" })
-    );
+    expect(mocks.setFileMetadataStatus.mock.calls.map(([, , status]) => status)).toEqual([
+      "pending",
+      "failed"
+    ]);
     expect(mocks.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it("重新探测已完成文件时使用定向状态写入", async () => {
+    const candidate = fileCandidate("complete", { metadataStatus: "complete" });
+    mocks.getFile.mockResolvedValue(candidate);
+    mocks.listFiles.mockResolvedValue([candidate]);
+    mocks.setFileMetadataStatus.mockImplementation((_sessionId, _candidateId, metadataStatus) =>
+      Promise.resolve({ ...candidate, metadataStatus })
+    );
+    new MessageRouter({} as DownloadManager);
+
+    await new Promise<MessageResponse>((resolve) => {
+      runtimeListener?.(
+        {
+          type: "PROBE_METADATA",
+          payload: { sessionId: "session-fixture", candidateId: candidate.id }
+        },
+        { id: "extension-id" },
+        resolve
+      );
+    });
+
+    expect(mocks.setFileMetadataStatus).toHaveBeenNthCalledWith(
+      1,
+      "session-fixture",
+      candidate.id,
+      "pending"
+    );
   });
 });

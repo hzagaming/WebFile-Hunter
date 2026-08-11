@@ -554,6 +554,16 @@ try {
     document.head.append(meta);
   });
 
+  const liveSettings = await send(permissionPage, { type: "GET_SETTINGS" });
+  await send(permissionPage, {
+    type: "SAVE_SETTINGS",
+    payload: {
+      settings: {
+        ...liveSettings,
+        customExtensions: { ...liveSettings.customExtensions, meshx: "model" }
+      }
+    }
+  });
   const liveSession = await send(permissionPage, {
     type: "START_LIVE_MONITOR",
     payload: { tabId, origin: server.origin }
@@ -583,6 +593,10 @@ try {
   await fixturePage.evaluate(
     (url) => fetch(url).then((response) => response.arrayBuffer()),
     `${cdnOrigin}/api/cross-origin`
+  );
+  await fixturePage.evaluate(
+    (url) => fetch(url).then((response) => response.arrayBuffer()),
+    `${cdnOrigin}/files/live-scene.meshx`
   );
   const liveRows = await eventually(
     () => databaseRows(worker),
@@ -624,6 +638,13 @@ try {
           file.sessionId === liveSession.id &&
           file.canonicalUrl === `${server.origin}/files/adopted-live.webp` &&
           file.sources.includes("CSS_URL")
+      ) &&
+      rows.files.some(
+        (file) =>
+          file.sessionId === liveSession.id &&
+          file.canonicalUrl === `${cdnOrigin}/files/live-scene.meshx` &&
+          file.category === "model" &&
+          file.sources.includes("NETWORK_REQUEST")
       )
   );
   const apiFile = liveRows.files.find(
@@ -908,6 +929,39 @@ try {
   await putDatabaseFile(worker, codeFile);
   await putDatabaseFile(worker, fontFile);
   await putDatabaseFile(worker, modelFile);
+  const metadataRetryFile = {
+    ...currentFiles[0],
+    id: "file-e2e-metadata-retry",
+    sessionId: liveSession.id,
+    originalUrl: `${recursiveOrigin}/slow-page?metadata-retry=1`,
+    canonicalUrl: `${recursiveOrigin}/slow-page?metadata-retry=1`,
+    filename: "metadata-retry.pdf",
+    extension: "pdf",
+    category: "document",
+    mimeType: "application/pdf",
+    confidence: 100,
+    metadataStatus: "complete",
+    discoveredAt: Date.now() + 7,
+    updatedAt: Date.now() + 7
+  };
+  await putDatabaseFile(worker, metadataRetryFile);
+  const metadataRetry = send(permissionPage, {
+    type: "PROBE_METADATA",
+    payload: { sessionId: liveSession.id, candidateId: metadataRetryFile.id }
+  });
+  await eventually(
+    () => databaseRows(worker),
+    (rows) =>
+      rows.files.find((file) => file.id === metadataRetryFile.id)?.metadataStatus === "pending"
+  );
+  await metadataRetry;
+  const metadataRetryRows = await databaseRows(worker);
+  if (
+    metadataRetryRows.files.find((file) => file.id === metadataRetryFile.id)?.metadataStatus !==
+    "complete"
+  ) {
+    throw new Error("元数据重新探测未从 pending 正确完成。");
+  }
 
   const extremeFilename = `${"超长文件名-".repeat(12)}fixture.extremelylongextension`;
   await putDatabaseFile(worker, {
@@ -957,6 +1011,9 @@ try {
     ) ||
     !rowsWithExtreme.files.some(
       (file) => file.id === modelFile.id && file.sessionId === liveSession.id
+    ) ||
+    !rowsWithExtreme.files.some(
+      (file) => file.id === metadataRetryFile.id && file.sessionId === liveSession.id
     )
   ) {
     throw new Error("结果页 E2E 夹具未写入实时监听会话。");
@@ -1472,6 +1529,7 @@ try {
   console.log("blob 临时媒体安全标记通过");
   console.log(`实时监听通过：${apiFile.filename} (${apiFile.mimeType})`);
   console.log("第三方 CDN 响应与跨域 frame 资源嗅探通过");
+  console.log("自定义扩展网络嗅探与元数据重新探测状态流转通过");
   console.log("SPA 既有 Open Graph 元信息动态更新嗅探通过");
   console.log("同源导航监听重注入通过");
   console.log(
