@@ -1201,6 +1201,34 @@ fieldset.settings-group {
 .permission-subheading {
   margin-top: 14px;
 }
+.permission-editor {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fbfc;
+}
+.permission-switch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #3f5d6b;
+  font-size: 12px;
+}
+.permission-url-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.permission-editor .current-url {
+  margin: 0;
+}
+.permission-editor button {
+  justify-self: start;
+}
 .permission-list > div {
   display: flex;
   align-items: center;

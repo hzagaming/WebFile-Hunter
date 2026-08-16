@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   handleLiveTabUpdated: vi.fn(() => Promise.resolve()),
   reconcileState: { calls: 0 },
   reconcileDownloads: vi.fn(() => Promise.resolve()),
-  reconcileInterruptedSessions: vi.fn(() => Promise.resolve())
+  reconcileInterruptedSessions: vi.fn(() => Promise.resolve()),
+  stopSessionsForRemovedOrigins: vi.fn(() => Promise.resolve())
 }));
 
 vi.mock("@/background/broadcast", () => ({ broadcast: mocks.broadcast }));
@@ -26,7 +27,7 @@ vi.mock("@/background/session-lifecycle", () => ({
   handleLiveTabUpdated: mocks.handleLiveTabUpdated,
   reconcileInterruptedSessions: mocks.reconcileInterruptedSessions,
   stopLiveMonitor: vi.fn(),
-  stopSessionsForRemovedOrigins: vi.fn(),
+  stopSessionsForRemovedOrigins: mocks.stopSessionsForRemovedOrigins,
   stopSessionsForTab: vi.fn()
 }));
 vi.mock("@/database/settings", () => ({ getSettings: vi.fn(), saveSettings: vi.fn() }));
@@ -41,6 +42,8 @@ let updatedListener:
     ) => void)
   | undefined;
 let focusChangedListener: ((windowId: number) => void) | undefined;
+let permissionAddedListener: ((permissions: chrome.permissions.Permissions) => void) | undefined;
+let permissionRemovedListener: ((permissions: chrome.permissions.Permissions) => void) | undefined;
 
 function event() {
   return { addListener: vi.fn() };
@@ -75,7 +78,18 @@ beforeAll(async () => {
         })
       }
     },
-    permissions: { onRemoved: event() },
+    permissions: {
+      onAdded: {
+        addListener: vi.fn((listener: typeof permissionAddedListener) => {
+          permissionAddedListener = listener;
+        })
+      },
+      onRemoved: {
+        addListener: vi.fn((listener: typeof permissionRemovedListener) => {
+          permissionRemovedListener = listener;
+        })
+      }
+    },
     windows: {
       onFocusChanged: {
         addListener: vi.fn((listener: typeof focusChangedListener) => {
@@ -90,6 +104,7 @@ beforeAll(async () => {
 beforeEach(() => {
   mocks.broadcast.mockClear();
   mocks.handleLiveTabUpdated.mockClear();
+  mocks.stopSessionsForRemovedOrigins.mockClear();
 });
 
 describe("service worker active context events", () => {
@@ -114,6 +129,19 @@ describe("service worker active context events", () => {
   it("窗口重新获得焦点时刷新该窗口上下文", () => {
     focusChangedListener?.(3);
 
+    expect(mocks.broadcast).toHaveBeenCalledWith({ type: "ACTIVE_CONTEXT_CHANGED" });
+  });
+
+  it("浏览器权限面板添加网站权限时广播上下文变化", () => {
+    permissionAddedListener?.({ origins: ["https://added.test/*"] });
+
+    expect(mocks.broadcast).toHaveBeenCalledWith({ type: "ACTIVE_CONTEXT_CHANGED" });
+  });
+
+  it("浏览器权限面板撤销网站权限时停止对应任务并广播上下文变化", () => {
+    permissionRemovedListener?.({ origins: ["https://removed.test/*"] });
+
+    expect(mocks.stopSessionsForRemovedOrigins).toHaveBeenCalledWith(["https://removed.test/*"]);
     expect(mocks.broadcast).toHaveBeenCalledWith({ type: "ACTIVE_CONTEXT_CHANGED" });
   });
 

@@ -1473,6 +1473,26 @@ try {
   await sidepanelPage.getByRole("heading", { name: "设置", exact: true }).waitFor();
   await assertResponsive(sidepanelPage, "设置页");
   await assertActiveNavigation(sidepanelPage, "设置");
+  const currentSiteToggle = sidepanelPage.getByRole("checkbox", {
+    name: "自动识别当前网站",
+    exact: true
+  });
+  if (!(await currentSiteToggle.isChecked())) throw new Error("设置页未默认识别当前网站。");
+  await sidepanelPage.locator(".permission-editor .current-url").getByText(server.origin).waitFor();
+  await currentSiteToggle.uncheck();
+  const customSiteInput = sidepanelPage.getByRole("textbox", { name: "网站 URL", exact: true });
+  await customSiteInput.fill("not a host");
+  await sidepanelPage.getByRole("button", { name: "授权网站", exact: true }).click();
+  await sidepanelPage.getByText("请输入有效的 HTTP(S) 网站地址。", { exact: true }).waitFor();
+  await customSiteInput.fill("google.com");
+  await sidepanelPage.getByRole("button", { name: "授权网站", exact: true }).click();
+  await sidepanelPage
+    .getByText("网站已获授权，可在对应标签页主动开始扫描。", { exact: true })
+    .waitFor();
+  if (await sidepanelPage.getByText("https://google.com/*", { exact: true }).count()) {
+    throw new Error("完整权限覆盖时错误显示了虚假单站权限。");
+  }
+  await assertResponsive(sidepanelPage, "自定义网站授权");
   await sidepanelPage.getByLabel("同路径查询变体上限").fill("9");
   await sidepanelPage.getByLabel("样式表抓取上限").fill("160");
   await sidepanelPage.getByLabel("请求超时（秒）").fill("30");
@@ -1548,6 +1568,7 @@ try {
   console.log("媒体浮层实际加载且默认不自动播放通过");
   console.log("资源新标签页打开通过");
   console.log("高级扫描设置保存与回读通过");
+  console.log("自定义网站授权、输入校验与真实权限回读通过");
   console.log(`单项下载隔离与真实落盘通过：${requestedFileDownload.filename}`);
   console.log("可能资源独立入口与 blob 安全提示通过");
   console.log("六页窄侧栏、可访问控件与历史清空隔离通过");

@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
-import { ALL_SITES_ORIGINS, isAllSitesOrigin } from "@/core/host-permissions";
+import {
+  ALL_SITES_ORIGINS,
+  isAllSitesOrigin,
+  permissionPatternsForSite
+} from "@/core/host-permissions";
 import { clampAppSettings, DEFAULT_SETTINGS } from "@/utils/defaults";
 import type { AppSettings, FileCategory } from "@/types/models";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
@@ -50,12 +54,14 @@ function formatCustomMap(value: Record<string, FileCategory>, separator: string)
 export function SettingsPage({ snapshot, refresh, updateSettings, standalone = false }: Props) {
   const [settingsDraft, setSettings] = useState<AppSettings>();
   const settings = settingsDraft ?? snapshot.settings;
-  const [origins, setOrigins] = useState<string[]>([]);
+  const origins = snapshot.grantedOrigins;
   const broadOrigins = origins.filter(isAllSitesOrigin);
   const siteOrigins = origins.filter((origin) => !isAllSitesOrigin(origin));
   const fullAccess = ALL_SITES_ORIGINS.every((origin) => origins.includes(origin));
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [working, setWorking] = useState(false);
+  const [useCurrentSite, setUseCurrentSite] = useState(true);
+  const [customSite, setCustomSite] = useState("");
   const [customExtensionsDraft, setCustomExtensions] = useState<string>();
   const customExtensions =
     customExtensionsDraft ?? formatCustomMap(snapshot.settings.customExtensions, ", ");
@@ -63,20 +69,14 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
   const customMimes = customMimesDraft ?? formatCustomMap(snapshot.settings.customMimeTypes, "\n");
   const fail = (error: unknown, fallback: string): void =>
     setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
-
-  useEffect(() => {
-    let active = true;
-    void sendMessage<string[]>({ type: "GET_GRANTED_ORIGINS" })
-      .then((value) => {
-        if (active) setOrigins(value);
-      })
-      .catch((error: unknown) => {
-        if (active) fail(error, "无法读取已授权网站。");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const currentSite = (() => {
+    try {
+      const url = new URL(snapshot.activeTab?.url ?? "");
+      return ["http:", "https:"].includes(url.protocol) ? url : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
 
   const save = async (): Promise<void> => {
     const next = clampAppSettings({
@@ -108,9 +108,16 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
     setWorking(true);
     setFeedback(undefined);
     try {
-      await sendMessage({ type: "REVOKE_ORIGIN", payload: { originPattern } });
-      setOrigins((current) => current.filter((origin) => origin !== originPattern));
-      setFeedback({ kind: "success", text: "网站权限已撤销，对应进行中任务已安全停止。" });
+      const removed = await sendMessage<boolean>({
+        type: "REVOKE_ORIGIN",
+        payload: { originPattern }
+      });
+      if (removed) {
+        setFeedback({ kind: "success", text: "网站权限已撤销，对应进行中任务已安全停止。" });
+      } else {
+        setFeedback({ kind: "warning", text: "网站权限已不存在，列表已刷新。" });
+      }
+      await refresh(snapshot.activeSession?.id);
     } catch (error) {
       fail(error, "无法撤销网站权限。");
     } finally {
@@ -123,12 +130,41 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
     setWorking(true);
     setFeedback(undefined);
     try {
-      await sendMessage({ type: "REVOKE_ALL_SITES" });
-      setOrigins((current) => current.filter((origin) => !isAllSitesOrigin(origin)));
-      setFeedback({ kind: "success", text: "完整嗅探权限已撤销，实时嗅探已安全停止。" });
+      const removed = await sendMessage<boolean>({ type: "REVOKE_ALL_SITES" });
+      if (removed) {
+        setFeedback({ kind: "success", text: "完整嗅探权限已撤销，实时嗅探已安全停止。" });
+      } else {
+        setFeedback({ kind: "warning", text: "完整嗅探权限已不存在，状态已刷新。" });
+      }
       await refresh(snapshot.activeSession?.id);
     } catch (error) {
       fail(error, "无法撤销完整嗅探权限。");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const authorizeSite = async (): Promise<void> => {
+    let requestedOrigins: string[];
+    try {
+      requestedOrigins = permissionPatternsForSite(
+        useCurrentSite ? (currentSite?.href ?? "") : customSite
+      );
+    } catch (error) {
+      fail(error, "无法识别授权网站。");
+      return;
+    }
+    setWorking(true);
+    setFeedback(undefined);
+    try {
+      if (!(await chrome.permissions.request({ origins: requestedOrigins }))) {
+        setFeedback({ kind: "warning", text: "未授予网站权限。" });
+        return;
+      }
+      await refresh(snapshot.activeSession?.id);
+      setFeedback({ kind: "success", text: "网站已获授权，可在对应标签页主动开始扫描。" });
+    } catch (error) {
+      fail(error, "无法添加网站权限。");
     } finally {
       setWorking(false);
     }
@@ -580,6 +616,46 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
       <div className="settings-group">
         <h3>资源访问权限</h3>
         <p>权限只用于你主动启动的任务。完整嗅探仍只处理指定标签页，不读取浏览历史。</p>
+        <div className="permission-editor">
+          <label className="permission-switch">
+            <input
+              type="checkbox"
+              checked={useCurrentSite}
+              disabled={working}
+              onChange={(event) => setUseCurrentSite(event.target.checked)}
+            />
+            自动识别当前网站
+          </label>
+          {useCurrentSite ? (
+            <p className="current-url" title={currentSite?.origin}>
+              {currentSite?.origin ?? "当前标签页不是可授权的 HTTP(S) 网站。"}
+            </p>
+          ) : (
+            <label className="permission-url-field">
+              网站 URL
+              <input
+                type="text"
+                inputMode="url"
+                autoCapitalize="none"
+                autoComplete="url"
+                autoCorrect="off"
+                spellCheck={false}
+                value={customSite}
+                disabled={working}
+                placeholder="google.com 或 https://google.com"
+                onChange={(event) => setCustomSite(event.target.value)}
+              />
+            </label>
+          )}
+          <button
+            className="primary"
+            type="button"
+            disabled={working || (useCurrentSite ? !currentSite : customSite.trim().length === 0)}
+            onClick={() => void authorizeSite()}
+          >
+            授权网站
+          </button>
+        </div>
         {broadOrigins.length ? (
           <div className={`permission-scope ${fullAccess ? "enabled" : "partial"}`}>
             <div>

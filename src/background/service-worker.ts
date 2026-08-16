@@ -71,8 +71,13 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   broadcast({ type: "ACTIVE_CONTEXT_CHANGED" });
 });
 
+chrome.permissions.onAdded.addListener((permissions) => {
+  if (permissions.origins?.length) broadcast({ type: "ACTIVE_CONTEXT_CHANGED" });
+});
+
 chrome.permissions.onRemoved.addListener((permissions) => {
   const origins = permissions.origins ?? [];
   if (!origins.length) return;
+  broadcast({ type: "ACTIVE_CONTEXT_CHANGED" });
   void stopSessionsForRemovedOrigins(origins).catch(() => undefined);
 });

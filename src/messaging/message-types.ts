@@ -37,7 +37,6 @@ export type ExtensionRequest =
   | { type: "CLEAR_ALL_DATA" }
   | { type: "GET_SETTINGS" }
   | { type: "SAVE_SETTINGS"; payload: { settings: AppSettings } }
-  | { type: "GET_GRANTED_ORIGINS" }
   | { type: "REVOKE_ALL_SITES" }
   | { type: "REVOKE_ORIGIN"; payload: { originPattern: string } };
 

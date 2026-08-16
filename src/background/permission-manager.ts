@@ -1,6 +1,11 @@
-import { ALL_SITES_ORIGINS, isAllSitesOrigin, siteOriginPattern } from "@/core/host-permissions";
+import {
+  ALL_SITES_ORIGINS,
+  isAllSitesOrigin,
+  permissionPatternsForSite,
+  siteOriginPattern
+} from "@/core/host-permissions";
 
-export { ALL_SITES_ORIGINS, isAllSitesOrigin };
+export { ALL_SITES_ORIGINS, isAllSitesOrigin, permissionPatternsForSite };
 
 export const originPattern = siteOriginPattern;
 

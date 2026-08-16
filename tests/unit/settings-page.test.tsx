@@ -7,6 +7,7 @@ import type { AppSettings } from "@/types/models";
 import { appSnapshot } from "../helpers/fixtures";
 
 const mocks = vi.hoisted(() => ({
+  requestPermission: vi.fn<(permissions: { origins: string[] }) => Promise<boolean>>(),
   sendMessage:
     vi.fn<(message: { type: string; payload?: { settings?: AppSettings } }) => Promise<unknown>>()
 }));
@@ -14,9 +15,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/messaging/message-client", () => ({ sendMessage: mocks.sendMessage }));
 
 beforeEach(() => {
-  mocks.sendMessage.mockImplementation((message: { type: string }) =>
-    Promise.resolve(message.type === "GET_GRANTED_ORIGINS" ? [] : undefined)
-  );
+  mocks.requestPermission.mockResolvedValue(true);
+  mocks.sendMessage.mockResolvedValue(undefined);
+  vi.stubGlobal("chrome", { permissions: { request: mocks.requestPermission } });
   vi.stubGlobal(
     "confirm",
     vi.fn(() => true)
@@ -82,11 +83,7 @@ describe("SettingsPage", () => {
 
   it("保存失败时显示可访问错误且不会成为未处理拒绝", async () => {
     const user = userEvent.setup();
-    mocks.sendMessage.mockImplementation((message: { type: string }) =>
-      message.type === "GET_GRANTED_ORIGINS"
-        ? Promise.resolve([])
-        : Promise.reject(new Error("设置写入失败"))
-    );
+    mocks.sendMessage.mockRejectedValue(new Error("设置写入失败"));
     render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("设置写入失败");
@@ -95,8 +92,7 @@ describe("SettingsPage", () => {
   it("保存期间锁定全部设置输入以避免草稿被旧响应覆盖", async () => {
     const user = userEvent.setup();
     let resolveSave: ((value: unknown) => void) | undefined;
-    mocks.sendMessage.mockImplementation((message: { type: string }) => {
-      if (message.type === "GET_GRANTED_ORIGINS") return Promise.resolve([]);
+    mocks.sendMessage.mockImplementation(() => {
       return new Promise((resolve) => {
         resolveSave = resolve;
       });
@@ -117,13 +113,13 @@ describe("SettingsPage", () => {
 
   it("撤销网站权限前明确提示会停止对应任务", async () => {
     const user = userEvent.setup();
-    mocks.sendMessage.mockImplementation((message: { type: string }) =>
-      Promise.resolve(
-        message.type === "GET_GRANTED_ORIGINS" ? ["https://example.test/*"] : undefined
-      )
-    );
     vi.mocked(confirm).mockReturnValue(false);
-    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+    render(
+      <SettingsPage
+        snapshot={appSnapshot({ grantedOrigins: ["https://example.test/*"] })}
+        refresh={vi.fn()}
+      />
+    );
     await user.click(await screen.findByRole("button", { name: "撤销" }));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("停止"));
     expect(mocks.sendMessage).not.toHaveBeenCalledWith(
@@ -131,18 +127,122 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("撤销网站权限后刷新全局权限快照", async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn(() => Promise.resolve());
+    mocks.sendMessage.mockResolvedValue(true);
+    render(
+      <SettingsPage
+        snapshot={appSnapshot({ grantedOrigins: ["https://example.test/*"] })}
+        refresh={refresh}
+      />
+    );
+
+    await user.click(await screen.findByRole("button", { name: "撤销" }));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith(undefined));
+  });
+
   it("将全站权限聚合为完整嗅探状态并支持一键撤销", async () => {
     const user = userEvent.setup();
-    mocks.sendMessage.mockImplementation((message: { type: string }) =>
-      Promise.resolve(message.type === "GET_GRANTED_ORIGINS" ? ["http://*/*", "https://*/*"] : true)
+    mocks.sendMessage.mockResolvedValue(true);
+    render(
+      <SettingsPage
+        snapshot={appSnapshot({ grantedOrigins: ["http://*/*", "https://*/*"] })}
+        refresh={vi.fn()}
+      />
     );
-    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
 
     expect(await screen.findByText("完整跨域嗅探已启用")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "撤销完整权限" }));
 
     expect(mocks.sendMessage).toHaveBeenCalledWith({ type: "REVOKE_ALL_SITES" });
     expect(await screen.findByRole("status")).toHaveTextContent("完整嗅探权限已撤销");
+  });
+
+  it("默认识别当前网站并由用户按钮触发授权", async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn(() => Promise.resolve());
+    render(
+      <SettingsPage
+        snapshot={appSnapshot({
+          activeTab: {
+            id: 7,
+            url: "https://media.example.test/watch",
+            title: "Media",
+            origin: "https://media.example.test"
+          }
+        })}
+        refresh={refresh}
+      />
+    );
+
+    expect(screen.getByRole("checkbox", { name: "自动识别当前网站" })).toBeChecked();
+    expect(screen.getByText("https://media.example.test")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "授权网站" }));
+
+    expect(mocks.requestPermission).toHaveBeenCalledWith({
+      origins: ["https://media.example.test/*"]
+    });
+    await waitFor(() => expect(refresh).toHaveBeenCalledWith(undefined));
+  });
+
+  it("允许关闭自动识别并授权用户填写的域名", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: "自动识别当前网站" }));
+    await user.type(screen.getByRole("textbox", { name: "网站 URL" }), "google.com");
+    await user.click(screen.getByRole("button", { name: "授权网站" }));
+
+    expect(mocks.requestPermission).toHaveBeenCalledWith({
+      origins: ["http://google.com/*", "https://google.com/*"]
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("网站已获授权");
+  });
+
+  it("拒绝无效自定义 URL 且不会请求权限", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: "自动识别当前网站" }));
+    await user.type(screen.getByRole("textbox", { name: "网站 URL" }), "not a host");
+    await user.click(screen.getByRole("button", { name: "授权网站" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("有效的 HTTP(S) 网站");
+    expect(mocks.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("以浏览器实际权限为准，不显示被全站权限覆盖的虚假单站条目", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPage
+        snapshot={appSnapshot({ grantedOrigins: ["http://*/*", "https://*/*"] })}
+        refresh={vi.fn(() => Promise.resolve())}
+      />
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "自动识别当前网站" }));
+    await user.type(screen.getByRole("textbox", { name: "网站 URL" }), "google.com");
+    await user.click(screen.getByRole("button", { name: "授权网站" }));
+
+    await screen.findByRole("status");
+    expect(screen.queryByText("https://google.com/*")).not.toBeInTheDocument();
+  });
+
+  it("外部权限变化刷新快照时同步设置页权限列表", async () => {
+    const { rerender } = render(
+      <SettingsPage snapshot={appSnapshot()} refresh={vi.fn(() => Promise.resolve())} />
+    );
+
+    rerender(
+      <SettingsPage
+        snapshot={appSnapshot({ grantedOrigins: ["https://external.test/*"] })}
+        refresh={vi.fn(() => Promise.resolve())}
+      />
+    );
+
+    expect(await screen.findByText("https://external.test/*")).toBeInTheDocument();
   });
 
   it("清除全部数据后恢复界面默认设置", async () => {

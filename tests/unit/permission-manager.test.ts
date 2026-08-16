@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ALL_SITES_ORIGINS,
   hasAllSitesPermission,
+  permissionPatternsForSite,
   revokeAllSitesPermission
 } from "@/background/permission-manager";
 
@@ -39,4 +40,29 @@ describe("all-sites permission", () => {
     await expect(revokeAllSitesPermission()).resolves.toBe(true);
     expect(remove).toHaveBeenCalledWith({ origins: ["https://*/*"] });
   });
+});
+
+describe("custom site permission", () => {
+  it("裸域名同时生成 HTTP 与 HTTPS 授权范围", () => {
+    expect(permissionPatternsForSite("google.com")).toEqual([
+      "http://google.com/*",
+      "https://google.com/*"
+    ]);
+  });
+
+  it("完整 URL 仅生成对应协议并忽略路径", () => {
+    expect(permissionPatternsForSite("https://www.google.com/search?q=file")).toEqual([
+      "https://www.google.com/*"
+    ]);
+  });
+
+  it.each([
+    "",
+    "ftp://google.com/file",
+    "https://user:pass@google.com",
+    "*.google.com",
+    "not a host"
+  ])("拒绝无效授权地址 %s", (value) =>
+    expect(() => permissionPatternsForSite(value)).toThrow("有效的 HTTP(S) 网站")
+  );
 });

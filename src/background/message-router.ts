@@ -333,8 +333,6 @@ export class MessageRouter {
       case "SAVE_SETTINGS":
         await saveSettings(message.payload.settings);
         return message.payload.settings;
-      case "GET_GRANTED_ORIGINS":
-        return getGrantedOrigins();
       case "REVOKE_ALL_SITES": {
         const removed = await revokeAllSitesPermission();
         if (removed) await stopSessionsForRemovedOrigins(ALL_SITES_ORIGINS);

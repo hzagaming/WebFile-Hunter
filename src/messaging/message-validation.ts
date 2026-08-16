@@ -223,7 +223,6 @@ export const extensionRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("CLEAR_ALL_DATA") }).strict(),
   z.object({ type: z.literal("GET_SETTINGS") }).strict(),
   z.object({ type: z.literal("SAVE_SETTINGS"), payload: z.object({ settings }).strict() }).strict(),
-  z.object({ type: z.literal("GET_GRANTED_ORIGINS") }).strict(),
   z.object({ type: z.literal("REVOKE_ALL_SITES") }).strict(),
   z
     .object({
