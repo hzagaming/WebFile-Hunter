@@ -41,6 +41,9 @@ afterEach(async () => {
 describe("release scripts", () => {
   it("正式 manifest 可识别任意普通网页但仍按站点申请内容权限", async () => {
     const manifest = JSON.parse(await readFile(resolve("manifest.json"), "utf8")) as {
+      default_locale?: string;
+      name?: string;
+      description?: string;
       permissions?: string[];
       host_permissions?: string[];
       optional_host_permissions?: string[];
@@ -49,6 +52,9 @@ describe("release scripts", () => {
     expect(manifest.permissions).toContain("tabs");
     expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toEqual(["http://*/*", "https://*/*"]);
+    expect(manifest.default_locale).toBe("en");
+    expect(manifest.name).toBe("__MSG_extensionName__");
+    expect(manifest.description).toBe("__MSG_extensionDescription__");
   });
 
   it("拒绝发布包中的 TODO/FIXME 标记", async () => {
@@ -71,6 +77,33 @@ describe("release scripts", () => {
     const envRoot = await releaseFixture();
     await writeFile(join(envRoot, ".env.production"), "SAFE_FIXTURE=true\n");
     await expect(validate(envRoot)).rejects.toThrow(/禁止文件/);
+  });
+
+  it("拒绝缺少默认语言消息的本地化 manifest", async () => {
+    const root = await releaseFixture();
+    await writeFile(
+      join(root, "manifest.json"),
+      JSON.stringify({
+        manifest_version: 3,
+        name: "__MSG_extensionName__",
+        version: "1.0.0",
+        default_locale: "en",
+        background: { service_worker: "worker.js" }
+      })
+    );
+
+    await expect(validate(root)).rejects.toThrow(/messages\.json|本地化/);
+  });
+
+  it("中英文 locale 完整提供 manifest 引用的消息", async () => {
+    const manifestText = await readFile(resolve("manifest.json"), "utf8");
+    const keys = [...manifestText.matchAll(/__MSG_([A-Za-z0-9_]+)__/g)].map((match) => match[1]!);
+    for (const locale of ["en", "zh_CN"]) {
+      const messages = JSON.parse(
+        await readFile(resolve(`_locales/${locale}/messages.json`), "utf8")
+      ) as Record<string, { message?: string }>;
+      for (const key of keys) expect(messages[key]?.message).toBeTruthy();
+    }
   });
 
   it("提供 Windows、Linux 与 macOS 的 Edge 候选路径", async () => {

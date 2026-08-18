@@ -67,4 +67,11 @@ describe("clampScanConfig", () => {
       retentionDays: 3650
     });
   });
+
+  it("只接受受支持的界面语言偏好", () => {
+    expect(clampAppSettings({ ...DEFAULT_SETTINGS, language: "en" }).language).toBe("en");
+    expect(clampAppSettings({ ...DEFAULT_SETTINGS, language: "invalid" as "auto" }).language).toBe(
+      "auto"
+    );
+  });
 });

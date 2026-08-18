@@ -142,7 +142,10 @@ export interface ScanProgress {
   requestsPerMinute?: number;
 }
 
+export type LanguagePreference = "auto" | "zh-CN" | "en";
+
 export interface AppSettings {
+  language: LanguagePreference;
   scan: ScanConfig;
   customExtensions: Record<string, FileCategory>;
   customMimeTypes: Record<string, FileCategory>;

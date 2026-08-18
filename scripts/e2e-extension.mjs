@@ -372,6 +372,11 @@ try {
   await permissionPage.goto(`${extensionOrigin}/options/index.html`, {
     waitUntil: "domcontentloaded"
   });
+  const initialSettings = await send(permissionPage, { type: "GET_SETTINGS" });
+  await send(permissionPage, {
+    type: "SAVE_SETTINGS",
+    payload: { settings: { ...initialSettings, language: "zh-CN" } }
+  });
 
   const ungrantedPage = await context.newPage();
   watchPage(ungrantedPage, "ungranted");
@@ -1154,6 +1159,27 @@ try {
   await assertResultCardControls(sidepanelPage, extremeFilename, 7);
   await assertLastResultUnobscured(sidepanelPage);
 
+  const resultLanguageSettings = await send(permissionPage, { type: "GET_SETTINGS" });
+  await send(permissionPage, {
+    type: "SAVE_SETTINGS",
+    payload: { settings: { ...resultLanguageSettings, language: "en" } }
+  });
+  await sidepanelPage.getByRole("heading", { name: /Discovered results/ }).waitFor();
+  await sidepanelPage
+    .getByRole("searchbox", { name: "Search results" })
+    .fill(previewImageFile.filename);
+  await assertResultCardControls(sidepanelPage, previewImageFile.filename, 7);
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-results-en-380.png"),
+    fullPage: true
+  });
+  await send(permissionPage, {
+    type: "SAVE_SETTINGS",
+    payload: { settings: { ...resultLanguageSettings, language: "zh-CN" } }
+  });
+  await sidepanelPage.getByRole("heading", { name: /发现结果/ }).waitFor();
+  await sidepanelPage.getByRole("searchbox", { name: "搜索结果" }).fill("");
+
   await sidepanelPage.getByRole("button", { name: "源码", exact: true }).click();
   const codeCard = sidepanelPage.locator(".result-card").filter({
     has: sidepanelPage.getByTitle(codeFile.filename, { exact: true })
@@ -1519,6 +1545,48 @@ try {
     fullPage: true
   });
 
+  await sidepanelPage.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
+  await sidepanelPage.getByRole("button", { name: "Save", exact: true }).click();
+  await sidepanelPage.getByText("Settings saved in this browser.", { exact: true }).waitFor();
+  await assertResponsive(sidepanelPage, "English settings page");
+  await sidepanelPage.screenshot({
+    path: resolve("test-results/edge-settings-en-380.png"),
+    fullPage: true
+  });
+  await sidepanelPage
+    .locator(".tabs")
+    .getByRole("button", { name: "Results", exact: true })
+    .click();
+  await sidepanelPage.getByRole("heading", { name: /Discovered results/ }).waitFor();
+  await assertResponsive(sidepanelPage, "English results page");
+  await sidepanelPage.locator(".tabs").getByRole("button", { name: "Text", exact: true }).click();
+  await sidepanelPage.getByRole("heading", { name: "Page text", exact: true }).waitFor();
+  await assertResponsive(sidepanelPage, "English text page");
+  await sidepanelPage
+    .locator(".tabs")
+    .getByRole("button", { name: /Downloads/, exact: true })
+    .click();
+  await sidepanelPage.getByRole("heading", { name: "Download queue", exact: true }).waitFor();
+  await assertResponsive(sidepanelPage, "English downloads page");
+  await sidepanelPage
+    .locator(".tabs")
+    .getByRole("button", { name: "History", exact: true })
+    .click();
+  await sidepanelPage.getByRole("heading", { name: "Scan history", exact: true }).waitFor();
+  await assertResponsive(sidepanelPage, "English history page");
+  await sidepanelPage.locator(".tabs").getByRole("button", { name: "Scan", exact: true }).click();
+  await sidepanelPage.getByRole("heading", { name: "Start scanning", exact: true }).waitFor();
+  await assertResponsive(sidepanelPage, "English scan page");
+  await sidepanelPage
+    .locator(".tabs")
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await sidepanelPage
+    .getByRole("combobox", { name: "Interface language", exact: true })
+    .selectOption("zh-CN");
+  await sidepanelPage.getByRole("button", { name: "保存", exact: true }).click();
+  await sidepanelPage.getByText("设置已保存到本地浏览器。", { exact: true }).waitFor();
+
   const settingsBeforeClear = await send(permissionPage, { type: "GET_SETTINGS" });
   await sidepanelPage.getByRole("button", { name: "历史", exact: true }).click();
   sidepanelPage.once("dialog", (dialog) => void dialog.accept());
@@ -1572,7 +1640,8 @@ try {
   console.log(`单项下载隔离与真实落盘通过：${requestedFileDownload.filename}`);
   console.log("可能资源独立入口与 blob 安全提示通过");
   console.log("六页窄侧栏、可访问控件与历史清空隔离通过");
-  console.log("页面与媒体预览截图已写入 test-results/edge-*-380.png");
+  console.log("中英文即时切换、持久化与六页窄侧栏布局通过");
+  console.log("中英文页面与媒体预览截图已写入 test-results/edge-*-380.png");
 } finally {
   await context?.close();
   await server.close();

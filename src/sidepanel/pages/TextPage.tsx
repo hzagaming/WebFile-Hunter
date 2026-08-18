@@ -5,6 +5,7 @@ import { sendMessage } from "@/messaging/message-client";
 import type { AppSnapshot } from "@/messaging/message-types";
 import type { ScanSession } from "@/types/models";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
+import { useI18n } from "@/i18n";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -41,6 +42,7 @@ function isSupportedPage(url?: string): boolean {
 }
 
 export function TextPage({ snapshot, refresh }: Props) {
+  const { known, language, locale, t } = useI18n();
   const [selectedId, setSelectedId] = useState(snapshot.textDocuments[0]?.id ?? "");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string>();
@@ -55,19 +57,23 @@ export function TextPage({ snapshot, refresh }: Props) {
   const canRecapture = Boolean(refresh && isSupportedPage(snapshot.activeTab?.url));
 
   const fail = (error: unknown, fallback: string): void =>
-    setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
+    setFeedback({ kind: "error", text: error instanceof Error ? known(error.message) : fallback });
   const copy = async (all: boolean): Promise<void> => {
     if (!selected) return;
     setBusy(all ? "copy-all" : "copy-current");
     setFeedback(undefined);
     try {
-      await navigator.clipboard.writeText(all ? exportPageText(documents) : selected.content);
+      await navigator.clipboard.writeText(
+        all ? exportPageText(documents, language) : selected.content
+      );
       setFeedback({
         kind: "success",
-        text: all ? `已复制 ${documents.length} 个网页的全部文字。` : "已复制当前网页文字。"
+        text: all
+          ? t("已复制 {count} 个网页的全部文字。", { count: documents.length })
+          : t("已复制当前网页文字。")
       });
     } catch (error) {
-      fail(error, "无法写入剪贴板。");
+      fail(error, t("无法写入剪贴板。"));
     } finally {
       setBusy(undefined);
     }
@@ -78,14 +84,17 @@ export function TextPage({ snapshot, refresh }: Props) {
     setFeedback(undefined);
     try {
       await saveExport(
-        exportPageText(documents),
+        exportPageText(documents, language),
         "txt",
         "text/plain;charset=utf-8",
         `webfile-hunter-text-${displayHost(documents[0]?.pageUrl ?? "")}`
       );
-      setFeedback({ kind: "success", text: `已导出 ${documents.length} 个网页的文字。` });
+      setFeedback({
+        kind: "success",
+        text: t("已导出 {count} 个网页的文字。", { count: documents.length })
+      });
     } catch (error) {
-      fail(error, "无法导出网页文字。");
+      fail(error, t("无法导出网页文字。"));
     } finally {
       setBusy(undefined);
     }
@@ -100,15 +109,15 @@ export function TextPage({ snapshot, refresh }: Props) {
       const granted = await chrome.permissions.request({
         origins: [`${url.protocol}//${url.hostname}/*`]
       });
-      if (!granted) throw new Error("未授予当前网站权限，网页文字没有重新提取。");
+      if (!granted) throw new Error(t("未授予当前网站权限，网页文字没有重新提取。"));
       const session = await sendMessage<ScanSession>({
         type: "SCAN_CURRENT_PAGE",
         payload: { tabId: tab.id }
       });
       await refresh(session.id);
-      setFeedback({ kind: "success", text: "已开始重新扫描并提取当前网页文字。" });
+      setFeedback({ kind: "success", text: t("已开始重新扫描并提取当前网页文字。") });
     } catch (error) {
-      fail(error, "无法重新提取当前网页文字。");
+      fail(error, t("无法重新提取当前网页文字。"));
     } finally {
       setBusy(undefined);
     }
@@ -118,22 +127,23 @@ export function TextPage({ snapshot, refresh }: Props) {
     <section className="page text-page" aria-busy={Boolean(busy)}>
       <div className="section-heading">
         <div>
-          <p className="eyebrow">纯文本 · 仅保存在本地</p>
-          <h2>网页文字</h2>
+          <p className="eyebrow">{t("纯文本 · 仅保存在本地")}</p>
+          <h2>{t("网页文字")}</h2>
         </div>
-        <span className="count" aria-label={`${documents.length} 个文本页面`}>
+        <span className="count" aria-label={t("{count} 个文本页面", { count: documents.length })}>
           {documents.length}
         </span>
       </div>
       <p className="section-copy">
-        提取当前任务中公开可见的网页正文；不会读取输入框、密码、明确隐藏的内容或可编辑草稿，也不会执行
-        OCR。
+        {t(
+          "提取当前任务中公开可见的网页正文；不会读取输入框、密码、明确隐藏的内容或可编辑草稿，也不会执行 OCR。"
+        )}
       </p>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
 
       {!documents.length ? (
         <div className="text-empty-wrap">
-          <div className="empty-state">当前任务还没有可提取的网页文字。</div>
+          <div className="empty-state">{t("当前任务还没有可提取的网页文字。")}</div>
           {canRecapture ? (
             <button
               className="primary full"
@@ -141,30 +151,30 @@ export function TextPage({ snapshot, refresh }: Props) {
               disabled={Boolean(busy)}
               onClick={() => void recapture()}
             >
-              重新扫描并提取当前网页
+              {t("重新扫描并提取当前网页")}
             </button>
           ) : null}
         </div>
       ) : (
         <>
-          <div className="text-metrics" aria-label="文字提取统计">
+          <div className="text-metrics" aria-label={t("文字提取统计")}>
             <div>
-              <strong>{documents.length.toLocaleString("zh-CN")}</strong>
-              <span>页面 / Frame</span>
+              <strong>{documents.length.toLocaleString(locale)}</strong>
+              <span>{t("页面 / Frame")}</span>
             </div>
             <div>
-              <strong>{totalCharacters.toLocaleString("zh-CN")}</strong>
-              <span>总字符</span>
+              <strong>{totalCharacters.toLocaleString(locale)}</strong>
+              <span>{t("总字符")}</span>
             </div>
             <div>
               <strong>{documents.filter((document) => document.truncated).length}</strong>
-              <span>已截断</span>
+              <span>{t("已截断")}</span>
             </div>
           </div>
 
           <div className="text-controls">
             <label>
-              选择网页
+              {t("选择网页")}
               <select
                 value={selected?.id ?? ""}
                 onChange={(event) => setSelectedId(event.target.value)}
@@ -177,12 +187,12 @@ export function TextPage({ snapshot, refresh }: Props) {
               </select>
             </label>
             <label>
-              搜索当前文字
+              {t("搜索当前文字")}
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="输入关键词"
+                placeholder={t("输入关键词")}
               />
             </label>
           </div>
@@ -191,21 +201,25 @@ export function TextPage({ snapshot, refresh }: Props) {
             <article className="text-document">
               <div className="text-document-heading">
                 <div>
-                  <h3>{selected.title || "未命名网页"}</h3>
+                  <h3>{selected.title || t("未命名网页")}</h3>
                   <p className="url" title={selected.pageUrl}>
                     {selected.pageUrl}
                   </p>
                 </div>
                 <span>
                   {search.trim()
-                    ? `${matches} 处匹配`
-                    : `${selected.characterCount.toLocaleString("zh-CN")} 字符`}
+                    ? t("{count} 处匹配", { count: matches })
+                    : t("{count} 字符", {
+                        count: selected.characterCount.toLocaleString(locale)
+                      })}
                 </span>
               </div>
               {selected.truncated ? (
-                <FeedbackNotice kind="warning">正文达到本地安全上限，已截断显示。</FeedbackNotice>
+                <FeedbackNotice kind="warning">
+                  {t("正文达到本地安全上限，已截断显示。")}
+                </FeedbackNotice>
               ) : null}
-              <pre className="text-content" tabIndex={0} aria-label="提取的网页文字">
+              <pre className="text-content" tabIndex={0} aria-label={t("提取的网页文字")}>
                 {selected.content}
               </pre>
             </article>
@@ -213,13 +227,13 @@ export function TextPage({ snapshot, refresh }: Props) {
 
           <div className="text-actions">
             <button type="button" disabled={Boolean(busy)} onClick={() => void copy(false)}>
-              复制当前
+              {t("复制当前")}
             </button>
             <button type="button" disabled={Boolean(busy)} onClick={() => void copy(true)}>
-              复制全部
+              {t("复制全部")}
             </button>
             <button type="button" disabled={Boolean(busy)} onClick={() => void exportAll()}>
-              导出 TXT
+              {t("导出 TXT")}
             </button>
             {canRecapture ? (
               <button
@@ -228,7 +242,7 @@ export function TextPage({ snapshot, refresh }: Props) {
                 disabled={Boolean(busy)}
                 onClick={() => void recapture()}
               >
-                重新提取
+                {t("重新提取")}
               </button>
             ) : null}
           </div>

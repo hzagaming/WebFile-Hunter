@@ -1,0 +1,8 @@
+{
+  "extensionName": { "message": "WebFile Hunter - Web File Discovery" },
+  "extensionShortName": { "message": "WebFile Hunter" },
+  "extensionDescription": {
+    "message": "Discover public web file resources and extract visible text after an action you initiate."
+  },
+  "actionTitle": { "message": "Open WebFile Hunter" }
+}

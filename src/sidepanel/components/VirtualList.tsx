@@ -1,4 +1,5 @@
 import { useMemo, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
+import { useI18n } from "@/i18n";
 
 interface Props<T> {
   items: readonly T[];
@@ -17,6 +18,7 @@ export function VirtualList<T>({
   getKey,
   renderItem
 }: Props<T>) {
+  const { t } = useI18n();
   const [scrollTop, setScrollTop] = useState(0);
   const overscan = 4;
   const visibleCount = Math.ceil(height / itemHeight) + overscan * 2;
@@ -54,7 +56,7 @@ export function VirtualList<T>({
       className="virtual-list"
       style={{ height }}
       role="region"
-      aria-label="扫描结果列表"
+      aria-label={t("扫描结果列表")}
       tabIndex={0}
       onScroll={onScroll}
       onKeyDown={onKeyDown}

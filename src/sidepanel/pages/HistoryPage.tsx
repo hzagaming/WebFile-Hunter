@@ -8,6 +8,7 @@ import { saveExport } from "@/export/save-export";
 import type { ScanSession } from "@/types/models";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
 import { StatusBadge } from "../components/StatusBadge";
+import { useI18n, type Translate } from "@/i18n";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -17,10 +18,11 @@ interface Props {
 }
 
 export function HistoryPage({ snapshot, refresh, openResults, openText }: Props) {
+  const { known, locale, t } = useI18n();
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [busy, setBusy] = useState<string>();
   const fail = (error: unknown, fallback: string): void =>
-    setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
+    setFeedback({ kind: "error", text: error instanceof Error ? known(error.message) : fallback });
   const open = async (sessionId: string, destination: "results" | "text"): Promise<void> => {
     setBusy(`open:${sessionId}`);
     setFeedback(undefined);
@@ -29,7 +31,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
       if (destination === "results") openResults();
       else openText?.();
     } catch (error) {
-      fail(error, "无法打开扫描结果。");
+      fail(error, t("无法打开扫描结果。"));
     } finally {
       setBusy(undefined);
     }
@@ -37,17 +39,17 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
   const remove = async (session: ScanSession): Promise<void> => {
     const isActive = ["running", "paused"].includes(session.status);
     const prompt = isActive
-      ? "删除此任务会先停止正在运行的任务，再删除历史与结果。确定继续？"
-      : "删除此扫描任务及其全部结果？此操作无法撤销。";
+      ? t("删除此任务会先停止正在运行的任务，再删除历史与结果。确定继续？")
+      : t("删除此扫描任务及其全部结果？此操作无法撤销。");
     if (!confirm(prompt)) return;
     setBusy(`remove:${session.id}`);
     setFeedback(undefined);
     try {
       await sendMessage({ type: "DELETE_SESSION", payload: { sessionId: session.id } });
       await refresh();
-      setFeedback({ kind: "success", text: "扫描任务及其结果已删除。" });
+      setFeedback({ kind: "success", text: t("扫描任务及其结果已删除。") });
     } catch (error) {
-      fail(error, "无法删除扫描任务。");
+      fail(error, t("无法删除扫描任务。"));
     } finally {
       setBusy(undefined);
     }
@@ -58,9 +60,9 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
     try {
       await sendMessage({ type: "RESUME_SCAN", payload: { sessionId } });
       await refresh(sessionId);
-      setFeedback({ kind: "success", text: "递归扫描任务已继续。" });
+      setFeedback({ kind: "success", text: t("递归扫描任务已继续。") });
     } catch (error) {
-      fail(error, "无法恢复任务。");
+      fail(error, t("无法恢复任务。"));
     } finally {
       setBusy(undefined);
     }
@@ -74,7 +76,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
         payload: { sessionId: session.id }
       });
       const format = data.settings.exportFormat;
-      const filename = `webfile-hunter-${displayHost(session.startUrl)}`;
+      const filename = `webfile-hunter-${displayHost(session.startUrl, t)}`;
       if (format === "txt") {
         await saveExport(exportTxt(data.files), "txt", "text/plain;charset=utf-8", filename);
       } else if (format === "csv") {
@@ -94,10 +96,13 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
       }
       setFeedback({
         kind: "success",
-        text: `已导出 ${data.files.length} 项 ${format.toUpperCase()} 结果。`
+        text: t("已导出 {count} 项 {format} 结果。", {
+          count: data.files.length,
+          format: format.toUpperCase()
+        })
       });
     } catch (error) {
-      fail(error, "无法导出历史结果。");
+      fail(error, t("无法导出历史结果。"));
     } finally {
       setBusy(undefined);
     }
@@ -105,7 +110,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
   const clear = async (): Promise<void> => {
     if (
       !snapshot.sessions.length ||
-      !confirm("清空全部扫描历史和结果？运行中任务会先停止，下载记录与设置会保留。")
+      !confirm(t("清空全部扫描历史和结果？运行中任务会先停止，下载记录与设置会保留。"))
     ) {
       return;
     }
@@ -114,9 +119,9 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
     try {
       await sendMessage({ type: "CLEAR_HISTORY" });
       await refresh();
-      setFeedback({ kind: "success", text: "扫描历史已清空，下载记录与设置已保留。" });
+      setFeedback({ kind: "success", text: t("扫描历史已清空，下载记录与设置已保留。") });
     } catch (error) {
-      fail(error, "无法清空扫描历史。");
+      fail(error, t("无法清空扫描历史。"));
     } finally {
       setBusy(undefined);
     }
@@ -126,8 +131,8 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
     <section className="page history-page" aria-busy={Boolean(busy)}>
       <div className="section-heading">
         <div>
-          <p className="eyebrow">仅保存在本地</p>
-          <h2>扫描历史</h2>
+          <p className="eyebrow">{t("仅保存在本地")}</p>
+          <h2>{t("扫描历史")}</h2>
         </div>
         <div className="card-actions">
           <span className="count">{snapshot.sessions.length}</span>
@@ -137,13 +142,15 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
             disabled={!snapshot.sessions.length || busy !== undefined}
             onClick={() => void clear()}
           >
-            清空历史
+            {t("清空历史")}
           </button>
         </div>
       </div>
       {snapshot.incompleteSessions.length ? (
         <FeedbackNotice kind="warning">
-          {`检测到 ${snapshot.incompleteSessions.length} 个未完成递归任务。任务不会自动恢复，请手动确认继续。`}
+          {t("检测到 {count} 个未完成递归任务。任务不会自动恢复，请手动确认继续。", {
+            count: snapshot.incompleteSessions.length
+          })}
         </FeedbackNotice>
       ) : null}
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
@@ -152,8 +159,8 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
           <article className="history-card" key={session.id}>
             <div className="section-heading">
               <div>
-                <h3>{displayHost(session.startUrl)}</h3>
-                <p>{new Date(session.createdAt).toLocaleString("zh-CN")}</p>
+                <h3>{displayHost(session.startUrl, t)}</h3>
+                <p>{new Date(session.createdAt).toLocaleString(locale)}</p>
               </div>
               <StatusBadge status={session.status} />
             </div>
@@ -163,14 +170,14 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
             <div className="metadata">
               <span>
                 {session.mode === "current_page"
-                  ? "当前页"
+                  ? t("当前页")
                   : session.mode === "live_monitor"
-                    ? "实时监听"
-                    : "递归扫描"}
+                    ? t("实时监听")
+                    : t("递归扫描")}
               </span>
-              <span>{session.pagesProcessed} 页</span>
-              <span>{session.filesDiscovered} 文件</span>
-              <span>{session.errors} 错误</span>
+              <span>{t("{count} 页", { count: session.pagesProcessed })}</span>
+              <span>{t("{count} 文件", { count: session.filesDiscovered })}</span>
+              <span>{t("{count} 错误", { count: session.errors })}</span>
             </div>
             <div className="card-actions">
               <button
@@ -178,7 +185,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
                 disabled={busy !== undefined}
                 onClick={() => void open(session.id, "results")}
               >
-                打开结果
+                {t("打开结果")}
               </button>
               {openText ? (
                 <button
@@ -186,7 +193,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
                   disabled={busy !== undefined}
                   onClick={() => void open(session.id, "text")}
                 >
-                  查看文字
+                  {t("查看文字")}
                 </button>
               ) : null}
               <button
@@ -194,7 +201,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
                 disabled={busy !== undefined}
                 onClick={() => void exportSession(session)}
               >
-                导出
+                {t("导出")}
               </button>
               {session.mode === "recursive_crawl" && session.status === "paused" ? (
                 <button
@@ -202,7 +209,7 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
                   disabled={busy !== undefined}
                   onClick={() => void resume(session.id)}
                 >
-                  继续任务
+                  {t("继续任务")}
                 </button>
               ) : null}
               <button
@@ -211,21 +218,23 @@ export function HistoryPage({ snapshot, refresh, openResults, openText }: Props)
                 disabled={busy !== undefined}
                 onClick={() => void remove(session)}
               >
-                删除
+                {t("删除")}
               </button>
             </div>
           </article>
         ))}
-        {!snapshot.sessions.length ? <div className="empty-state">暂无扫描历史。</div> : null}
+        {!snapshot.sessions.length ? (
+          <div className="empty-state">{t("暂无扫描历史。")}</div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function displayHost(url: string): string {
+function displayHost(url: string, t: Translate): string {
   try {
     return new URL(url).host;
   } catch {
-    return "未知网站";
+    return t("未知网站");
   }
 }

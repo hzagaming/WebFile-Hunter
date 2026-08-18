@@ -671,6 +671,9 @@ fieldset.settings-group {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(17, 124, 166, 0.12);
 }
+html[lang="en"] .result-card {
+  height: 276px;
+}
 .card-check {
   position: absolute;
   top: 14px;
@@ -837,13 +840,14 @@ fieldset.settings-group {
 .card-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
   margin-top: 8px;
 }
 .result-card .card-actions button {
   min-height: 28px;
   padding: 4px 6px;
   font-size: 10px;
+  white-space: nowrap;
 }
 .sticky-actions {
   position: sticky;

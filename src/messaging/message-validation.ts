@@ -83,6 +83,7 @@ const pageScanResultWithText = pageScanResult.extend({
 
 const settings = z
   .object({
+    language: z.enum(["auto", "zh-CN", "en"]),
     scan: scanConfig,
     customExtensions: z.record(
       z.string(),

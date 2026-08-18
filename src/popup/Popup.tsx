@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { sendMessage } from "@/messaging/message-client";
 import { ALL_SITES_ORIGINS } from "@/core/host-permissions";
 import type { ScanSession } from "@/types/models";
+import { useI18n } from "@/i18n";
 
 export function Popup() {
+  const { known, t } = useI18n();
   const [tab, setTab] = useState<chrome.tabs.Tab>();
   const [error, setError] = useState<string>();
   const [working, setWorking] = useState(false);
@@ -14,10 +16,10 @@ export function Popup() {
       .query({ active: true, currentWindow: true })
       .then((tabs) => setTab(tabs[0]))
       .catch((value: unknown) =>
-        setError(value instanceof Error ? value.message : "无法读取当前标签页。")
+        setError(value instanceof Error ? known(value.message) : t("无法读取当前标签页。"))
       )
       .finally(() => setLoaded(true));
-  }, []);
+  }, [known, t]);
   const page = (() => {
     try {
       if (!tab?.url) return undefined;
@@ -27,7 +29,7 @@ export function Popup() {
       return undefined;
     }
   })();
-  const host = page?.host ?? "不可用";
+  const host = page?.host ?? t("不可用");
 
   const openPanel = async (): Promise<boolean> => {
     if (tab?.id === undefined) return false;
@@ -35,7 +37,7 @@ export function Popup() {
       await chrome.sidePanel.open({ tabId: tab.id });
       return true;
     } catch (value) {
-      setError(value instanceof Error ? value.message : "无法打开侧边栏。");
+      setError(value instanceof Error ? known(value.message) : t("无法打开侧边栏。"));
       return false;
     }
   };
@@ -48,7 +50,7 @@ export function Popup() {
       const origins =
         mode === "monitor" ? ALL_SITES_ORIGINS : [`${page.protocol}//${page.hostname}/*`];
       if (!(await chrome.permissions.request({ origins }))) {
-        throw new Error(mode === "monitor" ? "未授予完整嗅探权限。" : "未授予当前网站权限。");
+        throw new Error(mode === "monitor" ? t("未授予完整嗅探权限。") : t("未授予当前网站权限。"));
       }
       if (mode === "monitor") {
         const parsed = page;
@@ -63,7 +65,7 @@ export function Popup() {
       if (await openPanel()) window.close();
       else setWorking(false);
     } catch (value) {
-      setError(value instanceof Error ? value.message : "操作失败。");
+      setError(value instanceof Error ? known(value.message) : t("操作失败。"));
       setWorking(false);
     }
   };
@@ -76,7 +78,7 @@ export function Popup() {
         </div>
         <div>
           <h1>WebFile Hunter</h1>
-          <p>当前网页：{host}</p>
+          <p>{t("当前网页：{host}", { host })}</p>
         </div>
       </header>
       {error ? (
@@ -86,7 +88,7 @@ export function Popup() {
       ) : null}
       {loaded && tab && !page ? (
         <div className="notice notice-info" role="status">
-          当前页面不支持扫描，仅支持 HTTP 或 HTTPS 网页。
+          {t("当前页面不支持扫描，仅支持 HTTP 或 HTTPS 网页。")}
         </div>
       ) : null}
       <button
@@ -95,7 +97,7 @@ export function Popup() {
         disabled={working || !page}
         onClick={() => void run("scan")}
       >
-        扫描当前页面
+        {t("扫描当前页面")}
       </button>
       <button
         className="full"
@@ -103,7 +105,7 @@ export function Popup() {
         disabled={working || !page}
         onClick={() => void run("monitor")}
       >
-        完整实时嗅探
+        {t("完整实时嗅探")}
       </button>
       <button
         className="full ghost"
@@ -111,9 +113,9 @@ export function Popup() {
         disabled={tab?.id === undefined}
         onClick={() => void openPanel()}
       >
-        打开侧边栏
+        {t("打开侧边栏")}
       </button>
-      <p className="privacy-note">完全本地运行 · 不读取 Cookie 或密码</p>
+      <p className="privacy-note">{t("完全本地运行 · 不读取 Cookie 或密码")}</p>
     </main>
   );
 }

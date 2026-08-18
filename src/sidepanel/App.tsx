@@ -6,10 +6,11 @@ import { DownloadsPage } from "./pages/DownloadsPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TextPage } from "./pages/TextPage";
+import { useI18n, type MessageKey, type Translate } from "@/i18n";
 
 type Tab = "scan" | "results" | "text" | "downloads" | "history" | "settings";
 
-const tabs: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
+const tabs: ReadonlyArray<{ id: Tab; label: MessageKey; icon: string }> = [
   { id: "scan", label: "扫描", icon: "⌁" },
   { id: "results", label: "结果", icon: "▤" },
   { id: "text", label: "文本", icon: "≡" },
@@ -19,9 +20,10 @@ const tabs: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
 ];
 
 export function App() {
+  const { known, t } = useI18n();
   const [tab, setTab] = useState<Tab>("scan");
   const state = useAppSnapshot();
-  const host = displayHost(state.snapshot?.activeTab?.url);
+  const host = displayHost(state.snapshot?.activeTab?.url, t);
   const counts: Partial<Record<Tab, number>> = state.snapshot
     ? {
         results: state.snapshot.files.length,
@@ -38,23 +40,27 @@ export function App() {
         </div>
         <div>
           <h1>WebFile Hunter</h1>
-          <p title={state.snapshot?.activeTab?.url}>当前网站：{host}</p>
+          <p title={state.snapshot?.activeTab?.url}>{t("当前网站：{host}", { host })}</p>
         </div>
         <span className={`permission-chip ${state.snapshot?.allSitesAccess ? "granted" : ""}`}>
-          {state.snapshot?.allSitesAccess ? "完整嗅探已授权" : "按站点授权"}
+          {state.snapshot?.allSitesAccess ? t("完整嗅探已授权") : t("按站点授权")}
         </span>
       </header>
 
       {state.error ? (
         <div className="notice notice-error" role="alert">
-          <span>{state.error}</span>
-          <button type="button" aria-label="关闭错误" onClick={() => state.setError(undefined)}>
+          <span>{known(state.error)}</span>
+          <button
+            type="button"
+            aria-label={t("关闭错误")}
+            onClick={() => state.setError(undefined)}
+          >
             ×
           </button>
         </div>
       ) : null}
 
-      <nav className="tabs" aria-label="主导航">
+      <nav className="tabs" aria-label={t("主导航")}>
         {tabs.map((item) => (
           <button
             type="button"
@@ -67,7 +73,7 @@ export function App() {
               {item.icon}
             </span>
             <span className="tab-label">
-              {item.label}
+              {t(item.label)}
               {counts[item.id] ? (
                 <span className="tab-count" aria-hidden="true">
                   {Math.min(counts[item.id] ?? 0, 99)}
@@ -83,7 +89,7 @@ export function App() {
         {!state.snapshot ? (
           <div className="empty-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            正在读取扩展状态…
+            {t("正在读取扩展状态…")}
           </div>
         ) : tab === "scan" ? (
           <ScannerPage
@@ -120,11 +126,11 @@ export function App() {
   );
 }
 
-function displayHost(url?: string): string {
-  if (!url) return "未选择网页";
+function displayHost(url: string | undefined, t: Translate): string {
+  if (!url) return t("未选择网页");
   try {
     return new URL(url).host;
   } catch {
-    return "当前页面不可用";
+    return t("当前页面不可用");
   }
 }

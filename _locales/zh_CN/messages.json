@@ -1,0 +1,6 @@
+{
+  "extensionName": { "message": "WebFile Hunter - 网页文件猎手" },
+  "extensionShortName": { "message": "WebFile Hunter" },
+  "extensionDescription": { "message": "在用户主动操作后发现网页公开文件资源并提取可见文字。" },
+  "actionTitle": { "message": "打开 WebFile Hunter" }
+}

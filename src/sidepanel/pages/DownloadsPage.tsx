@@ -4,6 +4,7 @@ import type { AppSnapshot } from "@/messaging/message-types";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
 import { StatusBadge } from "../components/StatusBadge";
 import type { DownloadTask } from "@/types/models";
+import { useI18n } from "@/i18n";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -17,6 +18,7 @@ function taskProgress(task: DownloadTask): number | undefined {
 }
 
 export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
+  const { known, t } = useI18n();
   const [feedback, setFeedback] = useState<{ kind: FeedbackKind; text: string }>();
   const [working, setWorking] = useState(false);
   const hasActiveDownloads = snapshot.downloads.some((task) =>
@@ -55,12 +57,12 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
       });
       await refresh(snapshot.activeSession?.id);
       if (action === "clear_completed") {
-        setFeedback({ kind: "success", text: "已清除完成和取消的下载记录。" });
+        setFeedback({ kind: "success", text: t("已清除完成和取消的下载记录。") });
       }
     } catch (value) {
       setFeedback({
         kind: "error",
-        text: value instanceof Error ? value.message : "下载操作失败。"
+        text: value instanceof Error ? known(value.message) : t("下载操作失败。")
       });
     } finally {
       setWorking(false);
@@ -81,31 +83,31 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
     <section className="page downloads-page" aria-busy={working}>
       <div className="section-heading">
         <div>
-          <p className="eyebrow">用户确认后执行</p>
-          <h2>下载队列</h2>
+          <p className="eyebrow">{t("用户确认后执行")}</p>
+          <h2>{t("下载队列")}</h2>
         </div>
         <span className="count">{snapshot.downloads.length}</span>
       </div>
       <p className="section-copy">
-        加入队列不会自动下载。点击“开始队列”后，浏览器才会按并发限制处理。
+        {t("加入队列不会自动下载。点击“开始队列”后，浏览器才会按并发限制处理。")}
       </p>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
       <div className="metrics download-metrics">
         <div>
           <strong>{queued}</strong>
-          <span>排队中</span>
+          <span>{t("排队中")}</span>
         </div>
         <div>
           <strong>{active}</strong>
-          <span>下载中</span>
+          <span>{t("下载中")}</span>
         </div>
         <div>
           <strong>{counts.completed?.length ?? 0}</strong>
-          <span>已完成</span>
+          <span>{t("已完成")}</span>
         </div>
         <div>
           <strong>{(counts.failed?.length ?? 0) + (counts.interrupted?.length ?? 0)}</strong>
-          <span>失败/中断</span>
+          <span>{t("失败/中断")}</span>
         </div>
       </div>
       <div className="button-row">
@@ -115,20 +117,20 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
           disabled={!queued || working}
           onClick={() => void act("start")}
         >
-          开始队列
+          {t("开始队列")}
         </button>
         <button type="button" disabled={!active || working} onClick={() => void act("pause")}>
-          暂停队列
+          {t("暂停队列")}
         </button>
         <button type="button" disabled={!queued || working} onClick={() => void act("resume")}>
-          继续队列
+          {t("继续队列")}
         </button>
         <button
           type="button"
           disabled={!clearable || working}
           onClick={() => void act("clear_completed")}
         >
-          清除已完成/已取消
+          {t("清除已完成/已取消")}
         </button>
       </div>
       <div className="download-list">
@@ -137,7 +139,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
           return (
             <article className="download-card" key={task.id}>
               <div className="section-heading">
-                <h3 title={task.filename}>{task.filename}</h3>
+                <h3 title={known(task.filename)}>{known(task.filename)}</h3>
                 <StatusBadge status={task.status} />
               </div>
               <p className="url" title={task.url}>
@@ -147,7 +149,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
                 <div
                   className="progress-track"
                   role="progressbar"
-                  aria-label={`${task.filename} 下载进度`}
+                  aria-label={t("{filename} 下载进度", { filename: known(task.filename) })}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={progress}
@@ -155,7 +157,9 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
                   <span style={{ width: `${progress}%` }} />
                 </div>
               ) : null}
-              {task.error ? <FeedbackNotice kind="error">{task.error}</FeedbackNotice> : null}
+              {task.error ? (
+                <FeedbackNotice kind="error">{known(task.error)}</FeedbackNotice>
+              ) : null}
               <div className="card-actions">
                 {["failed", "interrupted", "cancelled"].includes(task.status) ? (
                   <button
@@ -163,7 +167,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
                     disabled={working}
                     onClick={() => void act("retry", task.id)}
                   >
-                    重试
+                    {t("重试")}
                   </button>
                 ) : null}
                 {["queued", "starting", "in_progress"].includes(task.status) ? (
@@ -172,7 +176,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
                     disabled={working}
                     onClick={() => void act("cancel", task.id)}
                   >
-                    取消
+                    {t("取消")}
                   </button>
                 ) : null}
                 {task.status === "completed" ? (
@@ -182,14 +186,14 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
                       disabled={working}
                       onClick={() => void act("open", task.id)}
                     >
-                      打开文件
+                      {t("打开文件")}
                     </button>
                     <button
                       type="button"
                       disabled={working}
                       onClick={() => void act("show", task.id)}
                     >
-                      在文件夹中显示
+                      {t("在文件夹中显示")}
                     </button>
                   </>
                 ) : null}
@@ -198,7 +202,7 @@ export function DownloadsPage({ snapshot, refresh, updateDownloads }: Props) {
           );
         })}
         {!snapshot.downloads.length ? (
-          <div className="empty-state">下载队列为空。请在结果页选择文件后加入队列。</div>
+          <div className="empty-state">{t("下载队列为空。请在结果页选择文件后加入队列。")}</div>
         ) : null}
       </div>
     </section>

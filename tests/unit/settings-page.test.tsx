@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "@/sidepanel/pages/SettingsPage";
 import { DEFAULT_SETTINGS } from "@/utils/defaults";
 import type { AppSettings } from "@/types/models";
+import { I18nProvider } from "@/i18n";
 import { appSnapshot } from "../helpers/fixtures";
 
 const mocks = vi.hoisted(() => ({
@@ -270,5 +271,24 @@ describe("SettingsPage", () => {
     );
 
     expect(screen.getByLabelText("最大深度")).toHaveValue(4);
+  });
+
+  it("切换界面语言后立即生效并随设置保存", async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nProvider preference="zh-CN">
+        <SettingsPage snapshot={appSnapshot()} refresh={vi.fn()} />
+      </I18nProvider>
+    );
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "界面语言" }), "en");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mocks.sendMessage).toHaveBeenCalledWith({
+        type: "SAVE_SETTINGS",
+        payload: { settings: expect.objectContaining({ language: "en" }) as AppSettings }
+      })
+    );
   });
 });

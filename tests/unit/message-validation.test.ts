@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateExtensionRequest } from "@/messaging/message-validation";
+import { DEFAULT_SETTINGS } from "@/utils/defaults";
 
 describe("extension message validation", () => {
   it("接受已知且完整的消息", () => {
@@ -12,6 +13,12 @@ describe("extension message validation", () => {
     expect(validateExtensionRequest({ type: "GET_SNAPSHOT", payload: { tabId: 9 } }).success).toBe(
       true
     );
+    expect(
+      validateExtensionRequest({
+        type: "SAVE_SETTINGS",
+        payload: { settings: { ...DEFAULT_SETTINGS, language: "en" } }
+      }).success
+    ).toBe(true);
   });
 
   it.each([

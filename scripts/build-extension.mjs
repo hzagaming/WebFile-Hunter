@@ -1,5 +1,5 @@
 import { build } from "vite";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, cp, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -18,4 +18,5 @@ await build({ configFile: resolve("vite.config.ts") });
 await build({ configFile: resolve("vite.content.config.ts") });
 await mkdir(resolve("dist"), { recursive: true });
 await copyFile(resolve("manifest.json"), resolve("dist/manifest.json"));
+await cp(resolve("_locales"), resolve("dist/_locales"), { recursive: true });
 await run(process.execPath, [resolve("scripts/validate-manifest.mjs"), resolve("dist")]);

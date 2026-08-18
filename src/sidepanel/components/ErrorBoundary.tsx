@@ -1,14 +1,16 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { useI18n, type Translate } from "@/i18n";
 
 interface Props {
   children: ReactNode;
+  t: Translate;
 }
 
 interface State {
   message?: string;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundaryInner extends Component<Props, State> {
   override state: State = {};
 
   static getDerivedStateFromError(error: Error): State {
@@ -23,14 +25,19 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.message) {
       return (
         <main className="fatal-error">
-          <h1>界面暂时无法显示</h1>
+          <h1>{this.props.t("界面暂时无法显示")}</h1>
           <p>{this.state.message}</p>
           <button type="button" onClick={() => location.reload()}>
-            重新加载
+            {this.props.t("重新加载")}
           </button>
         </main>
       );
     }
     return this.props.children;
   }
+}
+
+export function ErrorBoundary({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  return <ErrorBoundaryInner t={t}>{children}</ErrorBoundaryInner>;
 }

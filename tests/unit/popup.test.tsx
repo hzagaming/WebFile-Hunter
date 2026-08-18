@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Popup } from "@/popup/Popup";
+import { I18nProvider } from "@/i18n";
 import { scanSession } from "../helpers/fixtures";
 
 const mocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
@@ -22,6 +23,16 @@ beforeEach(() => {
 });
 
 describe("Popup", () => {
+  it("英文语言下本地化 Popup 操作", async () => {
+    render(
+      <I18nProvider preference="en">
+        <Popup />
+      </I18nProvider>
+    );
+    expect(await screen.findByRole("button", { name: "Scan current page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Open side panel" })).toBeEnabled();
+  });
+
   it("非网页标签禁用扫描但仍可打开侧边栏", async () => {
     render(<Popup />);
     expect(await screen.findByText(/仅支持 HTTP 或 HTTPS/)).toHaveAttribute("role", "status");

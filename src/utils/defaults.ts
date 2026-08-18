@@ -20,6 +20,7 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  language: "auto",
   scan: DEFAULT_SCAN_CONFIG,
   customExtensions: {},
   customMimeTypes: {},
@@ -111,6 +112,9 @@ export function clampAppSettings(input: AppSettingsInput): AppSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...input,
+    language: ["auto", "zh-CN", "en"].includes(input.language ?? "")
+      ? (input.language as AppSettings["language"])
+      : DEFAULT_SETTINGS.language,
     scan: clampScanConfig(input.scan ?? DEFAULT_SETTINGS.scan),
     monitorDurationSeconds: boundedInteger(
       input.monitorDurationSeconds,

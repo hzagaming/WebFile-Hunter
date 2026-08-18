@@ -9,6 +9,7 @@ import {
 import { clampAppSettings, DEFAULT_SETTINGS } from "@/utils/defaults";
 import type { AppSettings, FileCategory } from "@/types/models";
 import { FeedbackNotice, type FeedbackKind } from "../components/FeedbackNotice";
+import { useI18n } from "@/i18n";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -52,6 +53,7 @@ function formatCustomMap(value: Record<string, FileCategory>, separator: string)
 }
 
 export function SettingsPage({ snapshot, refresh, updateSettings, standalone = false }: Props) {
+  const { known, setPreference, t } = useI18n();
   const [settingsDraft, setSettings] = useState<AppSettings>();
   const settings = settingsDraft ?? snapshot.settings;
   const origins = snapshot.grantedOrigins;
@@ -68,7 +70,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
   const [customMimesDraft, setCustomMimes] = useState<string>();
   const customMimes = customMimesDraft ?? formatCustomMap(snapshot.settings.customMimeTypes, "\n");
   const fail = (error: unknown, fallback: string): void =>
-    setFeedback({ kind: "error", text: error instanceof Error ? error.message : fallback });
+    setFeedback({ kind: "error", text: error instanceof Error ? known(error.message) : fallback });
   const currentSite = (() => {
     try {
       const url = new URL(snapshot.activeTab?.url ?? "");
@@ -94,17 +96,18 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         updateSettings ? undefined : formatCustomMap(next.customExtensions, ", ")
       );
       setCustomMimes(updateSettings ? undefined : formatCustomMap(next.customMimeTypes, "\n"));
-      setFeedback({ kind: "success", text: "设置已保存到本地浏览器。" });
+      setFeedback({ kind: "success", text: t("设置已保存到本地浏览器。") });
       await refresh(snapshot.activeSession?.id);
     } catch (error) {
-      fail(error, "无法保存设置。");
+      fail(error, t("无法保存设置。"));
     } finally {
       setWorking(false);
     }
   };
 
   const revoke = async (originPattern: string): Promise<void> => {
-    if (!confirm(`撤销 ${originPattern} 的权限？对应进行中任务会停止。`)) return;
+    if (!confirm(t("撤销 {origin} 的权限？对应进行中任务会停止。", { origin: originPattern })))
+      return;
     setWorking(true);
     setFeedback(undefined);
     try {
@@ -113,32 +116,32 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         payload: { originPattern }
       });
       if (removed) {
-        setFeedback({ kind: "success", text: "网站权限已撤销，对应进行中任务已安全停止。" });
+        setFeedback({ kind: "success", text: t("网站权限已撤销，对应进行中任务已安全停止。") });
       } else {
-        setFeedback({ kind: "warning", text: "网站权限已不存在，列表已刷新。" });
+        setFeedback({ kind: "warning", text: t("网站权限已不存在，列表已刷新。") });
       }
       await refresh(snapshot.activeSession?.id);
     } catch (error) {
-      fail(error, "无法撤销网站权限。");
+      fail(error, t("无法撤销网站权限。"));
     } finally {
       setWorking(false);
     }
   };
 
   const revokeAllSites = async (): Promise<void> => {
-    if (!confirm("撤销完整跨域嗅探权限？进行中的实时嗅探会停止。")) return;
+    if (!confirm(t("撤销完整跨域嗅探权限？进行中的实时嗅探会停止。"))) return;
     setWorking(true);
     setFeedback(undefined);
     try {
       const removed = await sendMessage<boolean>({ type: "REVOKE_ALL_SITES" });
       if (removed) {
-        setFeedback({ kind: "success", text: "完整嗅探权限已撤销，实时嗅探已安全停止。" });
+        setFeedback({ kind: "success", text: t("完整嗅探权限已撤销，实时嗅探已安全停止。") });
       } else {
-        setFeedback({ kind: "warning", text: "完整嗅探权限已不存在，状态已刷新。" });
+        setFeedback({ kind: "warning", text: t("完整嗅探权限已不存在，状态已刷新。") });
       }
       await refresh(snapshot.activeSession?.id);
     } catch (error) {
-      fail(error, "无法撤销完整嗅探权限。");
+      fail(error, t("无法撤销完整嗅探权限。"));
     } finally {
       setWorking(false);
     }
@@ -151,27 +154,27 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         useCurrentSite ? (currentSite?.href ?? "") : customSite
       );
     } catch (error) {
-      fail(error, "无法识别授权网站。");
+      fail(error, t("无法识别授权网站。"));
       return;
     }
     setWorking(true);
     setFeedback(undefined);
     try {
       if (!(await chrome.permissions.request({ origins: requestedOrigins }))) {
-        setFeedback({ kind: "warning", text: "未授予网站权限。" });
+        setFeedback({ kind: "warning", text: t("未授予网站权限。") });
         return;
       }
       await refresh(snapshot.activeSession?.id);
-      setFeedback({ kind: "success", text: "网站已获授权，可在对应标签页主动开始扫描。" });
+      setFeedback({ kind: "success", text: t("网站已获授权，可在对应标签页主动开始扫描。") });
     } catch (error) {
-      fail(error, "无法添加网站权限。");
+      fail(error, t("无法添加网站权限。"));
     } finally {
       setWorking(false);
     }
   };
 
   const clear = async (): Promise<void> => {
-    if (!confirm("确定清除全部扫描结果、历史、设置和下载任务记录？此操作无法撤销。")) return;
+    if (!confirm(t("确定清除全部扫描结果、历史、设置和下载任务记录？此操作无法撤销。"))) return;
     setWorking(true);
     setFeedback(undefined);
     try {
@@ -179,12 +182,13 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
       const defaults = structuredClone(DEFAULT_SETTINGS);
       updateSettings?.(defaults);
       setSettings(updateSettings ? undefined : defaults);
+      setPreference(defaults.language);
       setCustomExtensions(updateSettings ? undefined : "");
       setCustomMimes(updateSettings ? undefined : "");
-      setFeedback({ kind: "success", text: "全部本地数据已清除，设置已恢复默认值。" });
+      setFeedback({ kind: "success", text: t("全部本地数据已清除，设置已恢复默认值。") });
       await refresh();
     } catch (error) {
-      fail(error, "无法清除本地数据。");
+      fail(error, t("无法清除本地数据。"));
     } finally {
       setWorking(false);
     }
@@ -194,23 +198,41 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
     <section className={`page settings-page ${standalone ? "standalone" : ""}`} aria-busy={working}>
       <div className="section-heading">
         <div>
-          <p className="eyebrow">本地与最小权限</p>
-          <h2>设置</h2>
+          <p className="eyebrow">{t("本地与最小权限")}</p>
+          <h2>{t("设置")}</h2>
         </div>
         <button className="primary" type="button" disabled={working} onClick={() => void save()}>
-          保存
+          {t("保存")}
         </button>
       </div>
       {feedback ? <FeedbackNotice kind={feedback.kind}>{feedback.text}</FeedbackNotice> : null}
+      <fieldset className="settings-group" disabled={working}>
+        <h3>{t("界面语言")}</h3>
+        <label>
+          {t("界面语言")}
+          <select
+            value={settings.language}
+            onChange={(event) => {
+              const language = event.target.value as AppSettings["language"];
+              setSettings({ ...settings, language });
+              setPreference(language);
+            }}
+          >
+            <option value="auto">{t("跟随浏览器")}</option>
+            <option value="zh-CN">{t("简体中文")}</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </fieldset>
       <fieldset
         className="settings-group"
         disabled={working}
         aria-labelledby="settings-crawl-heading"
       >
-        <h3 id="settings-crawl-heading">默认递归扫描</h3>
+        <h3 id="settings-crawl-heading">{t("默认递归扫描")}</h3>
         <div className="form-grid">
           <label>
-            最大深度
+            {t("最大深度")}
             <input
               type="number"
               min="0"
@@ -225,7 +247,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            最大页面数
+            {t("最大页面数")}
             <input
               type="number"
               min="1"
@@ -240,7 +262,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            同路径查询变体上限
+            {t("同路径查询变体上限")}
             <input
               type="number"
               min="1"
@@ -258,7 +280,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            样式表抓取上限
+            {t("样式表抓取上限")}
             <input
               type="number"
               min="1"
@@ -273,7 +295,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            并发数
+            {t("并发数")}
             <input
               type="number"
               min="1"
@@ -288,7 +310,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            请求间隔（毫秒）
+            {t("请求间隔（毫秒）")}
             <input
               type="number"
               min="500"
@@ -302,7 +324,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            HTML 上限（MB）
+            {t("HTML 上限（MB）")}
             <input
               type="number"
               min="1"
@@ -317,7 +339,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            请求超时（秒）
+            {t("请求超时（秒）")}
             <input
               type="number"
               min="1"
@@ -335,7 +357,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            最大重定向
+            {t("最大重定向")}
             <input
               type="number"
               min="0"
@@ -350,7 +372,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            重试次数
+            {t("重试次数")}
             <input
               type="number"
               min="0"
@@ -377,7 +399,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            尊重 robots.txt
+            {t("尊重 robots.txt")}
           </label>
           <label>
             <input
@@ -390,7 +412,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            发现 Sitemap
+            {t("发现 Sitemap")}
           </label>
           <label>
             <input
@@ -403,7 +425,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            提取网页文字
+            {t("提取网页文字")}
           </label>
           <label>
             <input
@@ -416,7 +438,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            跟随重定向
+            {t("跟随重定向")}
           </label>
           <label>
             <input
@@ -429,7 +451,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            自动探测元数据
+            {t("自动探测元数据")}
           </label>
           <label>
             <input
@@ -442,7 +464,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 })
               }
             />
-            排除危险操作 URL
+            {t("排除危险操作 URL")}
           </label>
         </div>
       </fieldset>
@@ -451,7 +473,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         disabled={working}
         aria-labelledby="settings-discovery-heading"
       >
-        <h3 id="settings-discovery-heading">发现与显示</h3>
+        <h3 id="settings-discovery-heading">{t("发现与显示")}</h3>
         <div className="check-grid">
           <label>
             <input
@@ -459,7 +481,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.scanStylesheets}
               onChange={(e) => setSettings({ ...settings, scanStylesheets: e.target.checked })}
             />
-            扫描可访问样式表
+            {t("扫描可访问样式表")}
           </label>
           <label>
             <input
@@ -467,7 +489,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.scanImages}
               onChange={(e) => setSettings({ ...settings, scanImages: e.target.checked })}
             />
-            扫描图片资源
+            {t("扫描图片资源")}
           </label>
           <label>
             <input
@@ -475,12 +497,12 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.showLowConfidence}
               onChange={(e) => setSettings({ ...settings, showLowConfidence: e.target.checked })}
             />
-            显示低置信度资源
+            {t("显示低置信度资源")}
           </label>
         </div>
         <div className="form-grid">
           <label>
-            实时监听秒数
+            {t("实时监听秒数")}
             <input
               type="number"
               min="10"
@@ -492,7 +514,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            历史保留天数
+            {t("历史保留天数")}
             <input
               type="number"
               min="1"
@@ -503,7 +525,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
           </label>
         </div>
         <label>
-          自定义扩展名（扩展名:分类）
+          {t("自定义扩展名（扩展名:分类）")}
           <textarea
             rows={3}
             value={customExtensions}
@@ -512,7 +534,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
           />
         </label>
         <label>
-          自定义 MIME（MIME:分类）
+          {t("自定义 MIME（MIME:分类）")}
           <textarea
             rows={3}
             value={customMimes}
@@ -526,10 +548,10 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
         disabled={working}
         aria-labelledby="settings-download-heading"
       >
-        <h3 id="settings-download-heading">下载</h3>
+        <h3 id="settings-download-heading">{t("下载")}</h3>
         <div className="form-grid">
           <label>
-            下载并发
+            {t("下载并发")}
             <input
               type="number"
               min="1"
@@ -541,7 +563,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            大小上限（MB）
+            {t("大小上限（MB）")}
             <input
               type="number"
               min="1"
@@ -552,7 +574,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             />
           </label>
           <label>
-            默认导出
+            {t("默认导出")}
             <select
               value={settings.exportFormat}
               onChange={(e) =>
@@ -575,7 +597,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.askWhereToSave}
               onChange={(e) => setSettings({ ...settings, askWhereToSave: e.target.checked })}
             />
-            每次询问保存位置
+            {t("每次询问保存位置")}
           </label>
           <label>
             <input
@@ -583,7 +605,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.groupByDomain}
               onChange={(e) => setSettings({ ...settings, groupByDomain: e.target.checked })}
             />
-            按域名分类
+            {t("按域名分类")}
           </label>
           <label>
             <input
@@ -591,7 +613,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.groupByCategory}
               onChange={(e) => setSettings({ ...settings, groupByCategory: e.target.checked })}
             />
-            按类型分类
+            {t("按类型分类")}
           </label>
           <label>
             <input
@@ -601,7 +623,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 setSettings({ ...settings, confirmBeforeDownload: e.target.checked })
               }
             />
-            下载前确认（单项与批量）
+            {t("下载前确认（单项与批量）")}
           </label>
           <label>
             <input
@@ -609,13 +631,13 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               checked={settings.skipUnknownDownloads}
               onChange={(e) => setSettings({ ...settings, skipUnknownDownloads: e.target.checked })}
             />
-            跳过未知类型
+            {t("跳过未知类型")}
           </label>
         </div>
       </fieldset>
       <div className="settings-group">
-        <h3>资源访问权限</h3>
-        <p>权限只用于你主动启动的任务。完整嗅探仍只处理指定标签页，不读取浏览历史。</p>
+        <h3>{t("资源访问权限")}</h3>
+        <p>{t("权限只用于你主动启动的任务。完整嗅探仍只处理指定标签页，不读取浏览历史。")}</p>
         <div className="permission-editor">
           <label className="permission-switch">
             <input
@@ -624,15 +646,15 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
               disabled={working}
               onChange={(event) => setUseCurrentSite(event.target.checked)}
             />
-            自动识别当前网站
+            {t("自动识别当前网站")}
           </label>
           {useCurrentSite ? (
             <p className="current-url" title={currentSite?.origin}>
-              {currentSite?.origin ?? "当前标签页不是可授权的 HTTP(S) 网站。"}
+              {currentSite?.origin ?? t("当前标签页不是可授权的 HTTP(S) 网站。")}
             </p>
           ) : (
             <label className="permission-url-field">
-              网站 URL
+              {t("网站 URL")}
               <input
                 type="text"
                 inputMode="url"
@@ -642,7 +664,7 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
                 spellCheck={false}
                 value={customSite}
                 disabled={working}
-                placeholder="google.com 或 https://google.com"
+                placeholder={t("google.com 或 https://google.com")}
                 onChange={(event) => setCustomSite(event.target.value)}
               />
             </label>
@@ -653,44 +675,44 @@ export function SettingsPage({ snapshot, refresh, updateSettings, standalone = f
             disabled={working || (useCurrentSite ? !currentSite : customSite.trim().length === 0)}
             onClick={() => void authorizeSite()}
           >
-            授权网站
+            {t("授权网站")}
           </button>
         </div>
         {broadOrigins.length ? (
           <div className={`permission-scope ${fullAccess ? "enabled" : "partial"}`}>
             <div>
-              <strong>{fullAccess ? "完整跨域嗅探已启用" : "完整跨域嗅探权限不完整"}</strong>
+              <strong>{fullAccess ? t("完整跨域嗅探已启用") : t("完整跨域嗅探权限不完整")}</strong>
               <small>
                 {fullAccess
-                  ? "覆盖 HTTP/HTTPS 第三方 CDN、媒体与接口响应"
-                  : "当前权限不足以完整观察跨域资源，建议撤销后重新启用"}
+                  ? t("覆盖 HTTP/HTTPS 第三方 CDN、媒体与接口响应")
+                  : t("当前权限不足以完整观察跨域资源，建议撤销后重新启用")}
               </small>
             </div>
             <button type="button" disabled={working} onClick={() => void revokeAllSites()}>
-              撤销完整权限
+              {t("撤销完整权限")}
             </button>
           </div>
         ) : (
-          <p>完整跨域嗅探未启用，首次启动完整嗅探时会请求确认。</p>
+          <p>{t("完整跨域嗅探未启用，首次启动完整嗅探时会请求确认。")}</p>
         )}
-        <h3 className="permission-subheading">已授权网站</h3>
+        <h3 className="permission-subheading">{t("已授权网站")}</h3>
         <div className="permission-list">
           {siteOrigins.map((origin) => (
             <div key={origin}>
               <code>{origin}</code>
               <button type="button" disabled={working} onClick={() => void revoke(origin)}>
-                撤销
+                {t("撤销")}
               </button>
             </div>
           ))}
-          {!siteOrigins.length ? <p>暂无单独网站权限。</p> : null}
+          {!siteOrigins.length ? <p>{t("暂无单独网站权限。")}</p> : null}
         </div>
       </div>
       <div className="settings-group danger-zone">
-        <h3>本地数据</h3>
-        <p>扩展不会上传扫描历史、URL、文件名或网页内容。</p>
+        <h3>{t("本地数据")}</h3>
+        <p>{t("扩展不会上传扫描历史、URL、文件名或网页内容。")}</p>
         <button className="danger" type="button" disabled={working} onClick={() => void clear()}>
-          清除全部本地数据
+          {t("清除全部本地数据")}
         </button>
       </div>
     </section>

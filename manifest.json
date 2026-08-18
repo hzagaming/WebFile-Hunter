@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "WebFile Hunter - 网页文件猎手",
-  "short_name": "WebFile Hunter",
+  "name": "__MSG_extensionName__",
+  "short_name": "__MSG_extensionShortName__",
   "version": "1.11.0",
-  "description": "在用户主动操作后发现网页公开文件资源并提取可见文字。",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
@@ -21,7 +22,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "打开 WebFile Hunter",
+    "default_title": "__MSG_actionTitle__",
     "default_popup": "popup/index.html",
     "default_icon": {
       "16": "icons/icon16.png",

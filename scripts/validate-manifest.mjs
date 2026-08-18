@@ -5,6 +5,24 @@ const root = resolve(process.argv[2] ?? "dist");
 const manifestPath = resolve(root, "manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 
+if (manifest.default_locale) {
+  const messagesPath = resolve(root, "_locales", manifest.default_locale, "messages.json");
+  let messages;
+  try {
+    messages = JSON.parse(await readFile(messagesPath, "utf8"));
+  } catch {
+    throw new Error(`默认本地化 messages.json 无法读取：${messagesPath}`);
+  }
+  const references = [...JSON.stringify(manifest).matchAll(/__MSG_([A-Za-z0-9_]+)__/g)].map(
+    (match) => match[1]
+  );
+  for (const key of references) {
+    if (typeof messages[key]?.message !== "string" || !messages[key].message.trim()) {
+      throw new Error(`默认本地化缺少消息：${key}`);
+    }
+  }
+}
+
 if (manifest.manifest_version !== 3) throw new Error("manifest_version 必须为 3。\n");
 const forbidden = [
   "cookies",
